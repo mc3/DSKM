@@ -72,9 +72,7 @@ peter-ross-berlin.de 2013-01-26
 # -----------------------------------------
 # Configurables
 # -----------------------------------------
-dmapi_server = 'dmapi.joker.com'
-dmapi_account_name = 'axel.rau@chaos1.de'
-dmapi_account_pw = 'qswuiisr'
+import dns_joler_conf.py
 
 DEBUG = True
 # -----------------------------------------
