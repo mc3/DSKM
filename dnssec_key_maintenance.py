@@ -1,5 +1,37 @@
 #!/usr/bin/env python3
 
+"""
+ Copyright (c) 2012 Axel Rau, axel.rau@chaos1.de
+ All rights reserved.
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+
+    - Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    - Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+
+"""
+
+import sys
+
 from script import path, shell, opts
 import script
 import fnmatch
@@ -12,6 +44,7 @@ import binascii
 import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rcode
 import dns.dnssec
 
+import configparser
 #------------------------------------------------------------------------------
 #	Adjustables
 #--------------------------
@@ -171,6 +204,77 @@ class SigningKey(object):
 		salt = binascii.b2a_hex(rand.get_random_bytes(6)).decode('ASCII').upper()
 		
 
+class managedZone(object):
+	"""managedZone"""
+
+	def __init__(self, name):
+		self.name = name
+		self.cfg = configparser.ConfigParser()
+		self.cfg['DNSsec configuration'] = \
+										{'Method': 'None',		# NSEC or NSEC3 \
+										 'Registrar': 'Local'} 	# Joker, Ripe
+		self.stat = configparser.ConfigParser()
+		self.stat['DNSsec status'] = \
+										{'state': 'Idle',		#  \
+										 'Error': 'None'} 		# 
+
+		self.ksks = []
+		self.zsks = []
+	
+		self.parent_dir = None
+		
+		path(self.name).cd()
+
+		(x,y,parent) = self.name.partition('.')
+		self.parent_dir = path('../' + parent)
+		zl = ''
+		if self.parent_dir.exists:
+			zl = ' <local>'
+		if opts.verbose: print('[Working on ' + self.name + ' (' + parent + zl +')' + ']')
+
+		cfg_file_name = 'dnssec-conf-' + self.name
+		try:
+			fd = open(cfg_file_name)
+			fd.close()
+			testcfg = configparser.ConfigParser()
+			testcfg.read(cfg_file_name)
+			try:		# check if required keys exist
+				x = testcfg['DNSsec configuration']['Registrar']
+				x = testcfg['DNSsec configuration']['Method']
+			except:
+				print('?Trash in configuration file "' + self.name + '/' + cfg_file_name + '"')
+				sys.exit(1)
+			self.cfg.read(cfg_file_name)
+		except Exception:
+			print('%Missing zone config for ' + self.name + ' creating ' + cfg_file_name)
+			with open(cfg_file_name, 'w') as configfile:
+				self.cfg.write(configfile)		
+		self.ksks = []
+		self.zsks = []
+		for kf in path('.').list('*'):
+			if fnmatch.fnmatch(kf, 'K' + self.name + '.+*.key'):
+				k = SigningKey('read', '', kf)
+				if k.type == 'KSK':
+					self.ksks.append(k)
+				elif k.type == 'ZSK':
+					self.zsks.append(k)
+		if len(self.ksks) < 1:
+			self.ksks.append(SigningKey('KSK', self.name, ''))
+		if len(self.zsks) < 1:
+			self.zsks.append(SigningKey('ZSK', self.name, ''))
+		if opts.debug:
+			for key in self.ksks:
+				print(key.__str__())
+		if opts.debug:
+			for key in self.zsks:
+				print(key.__str__())
+		path('..').cd()
+
+
+#--------------------------
+#	Functions
+#--------------------------
+
 
 #--------------------------
 #	Main
@@ -193,6 +297,7 @@ def main():
 	root.cd()
 	root = path('.')
 	zone_dirs = []
+	zones = {}
 	for dir in root.list('*'):
 		if dir.is_dir:
 			zone_dirs.append(dir.name)
@@ -200,48 +305,7 @@ def main():
 	zone_dirs.reverse()
 	if opts.debug: print('[ Doing zones: ]')
 	if opts.debug: print( zone_dirs )
-	for zone in zone_dirs:
-		path(zone).cd()
-
-		(x,y,parent) = zone.partition('.')
-		parent_dir = path('../' + parent)
-		zl = ''
-		if parent_dir.exists:
-			zl = ' <local>'
-		if opts.verbose: print('[Working on ' + zone + ' (' + parent + zl +')' + ']')
-
-		cfg_file = 'dnssec.' + zone
-		cfg = 'None'
-		if not path(cfg_file).exists:
-			print('%Missing zone config for ' + zone + ' <creating...>')
-			cfg_fd = open(cfg_file, "w")
-			if opts.debug: print(cfg, file = cfg_fd)
-		else:
-			cfg_fd = open(cfg_file, "r")
-			cfg = cfg_fd.readline().strip()
-		if opts.debug: print('[Config is ' + cfg + ']')
-		cfg_fd.close()
-		
-		ksks = []
-		zsks = []
-		for kf in path('.').list('*'):
-			if fnmatch.fnmatch(kf, 'K' + zone + '.+*.key'):
-				k = SigningKey('read', '', kf)
-				if k.type == 'KSK':
-					ksks.append(k)
-				elif k.type == 'ZSK':
-					zsks.append(k)
-		if len(ksks) < 1:
-			ksks.append(SigningKey('KSK', zone, ''))
-		if len(zsks) < 1:
-			zsks.append(SigningKey('ZSK', zone, ''))
-		if opts.debug:
-			for key in ksks:
-				print(key.__str__())
-		if opts.debug:
-			for key in zsks:
-				print(key.__str__())
-		path('..').cd()
-	
+	for zone_name in zone_dirs:
+		zones[zone_name] = managedZone(zone_name)
 
 script.run(main)

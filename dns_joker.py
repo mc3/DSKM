@@ -149,7 +149,7 @@ for c in cl:
 cl = request('query-whois?domain=chaos1.de')
 for c in cl:
 	print(c)
-cl = request('query-whois?domain=peter-ross-berlin.de')
+cl = request('query-whois?domain=nussberg.de')
 for c in cl:
 	print(c)
 cl = request('query-whois?domain=lrau.net')
