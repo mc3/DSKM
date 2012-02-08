@@ -215,7 +215,7 @@ class managedZone(object):
 										 'Registrar': 'Local'} 	# Joker, Ripe
 		self.stat = configparser.ConfigParser()
 		self.stat['DNSsec status'] = \
-										{'state': 'Idle',		#  \
+										{'State': 'Idle',		#  \
 										 'Error': 'None'} 		# 
 
 		self.ksks = []
@@ -223,8 +223,36 @@ class managedZone(object):
 	
 		self.parent_dir = None
 		
+		def openConfig(cfg, domain_name, file_name):
+			section_name = cfg.sections()[0]
+			if opts.debug: print('[Opening %s for %s]' % (file_name, section_name))
+			try:
+				fd = open(file_name)		# check if conf/stat file exists
+				fd.close()
+				testcfg = configparser.ConfigParser()
+				try:						# check if required keys exist
+					testcfg.read(file_name)
+					for opt in cfg.options(section_name):
+						if opt not in testcfg.options(section_name):
+							print('?Missing option ' + opt + ' in configuration/status file "' + domain_name + '/' + file_name + '"') 
+							sys.exit(1)
+				except:						# configparser complained about syntax
+					print('?Trash in configuration file "' + domain_name + '/' + file_name + '"')
+					sys.exit(1)
+			except IOError:					# file not found
+				print('%Missing zone config/status for ' + domain_name + '; creating ' + file_name)
+				try:
+					with open(file_name, 'w') as fd:
+						cfg.write(fd)
+				except IOError:				# no write permission
+					(exc_type, exc_value, exc_traceback) = sys.exc_info()
+					errmsg = "?Can't create file, because %s" % (exc_value)
+					print(errmsg)
+					exit(1)
+			cfg.read(file_name)
+		
 		path(self.name).cd()
-
+		
 		(x,y,parent) = self.name.partition('.')
 		self.parent_dir = path('../' + parent)
 		zl = ''
@@ -233,22 +261,10 @@ class managedZone(object):
 		if opts.verbose: print('[Working on ' + self.name + ' (' + parent + zl +')' + ']')
 
 		cfg_file_name = 'dnssec-conf-' + self.name
-		try:
-			fd = open(cfg_file_name)
-			fd.close()
-			testcfg = configparser.ConfigParser()
-			testcfg.read(cfg_file_name)
-			try:		# check if required keys exist
-				x = testcfg['DNSsec configuration']['Registrar']
-				x = testcfg['DNSsec configuration']['Method']
-			except:
-				print('?Trash in configuration file "' + self.name + '/' + cfg_file_name + '"')
-				sys.exit(1)
-			self.cfg.read(cfg_file_name)
-		except Exception:
-			print('%Missing zone config for ' + self.name + ' creating ' + cfg_file_name)
-			with open(cfg_file_name, 'w') as configfile:
-				self.cfg.write(configfile)		
+		openConfig(self.cfg, name, cfg_file_name)
+		stat_file_name = 'dnssec-stat-' + self.name
+		openConfig(self.stat, name, stat_file_name)
+
 		self.ksks = []
 		self.zsks = []
 		for kf in path('.').list('*'):
