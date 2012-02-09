@@ -71,7 +71,6 @@ KSK_A_I_INTERVAL = 360			# inactive 360 days after active
 KSK_I_D_INTERVAL = 7			# deleted 7 days after inactive
 
 # key algorithm
-KEY_ALGO_KSK = 'RSASHA256'
 KEY_ALGO_NSEC = 'RSASHA256'
 KEY_ALGO_NSEC3 = 'NSEC3RSASHA1'
 DIGEST_ALGO_DS = '-2'			# SHA-256
@@ -97,11 +96,13 @@ current_timestamp = 0
 #--------------------------
 class SigningKey(object):
 	"""SigningKey"""
-	def __init__(self, action, name, file_name, nsec3 = None):
+	def __init__(self, action, name, file_name, nsec3 = False):
 		
 		self.name = None
 		self.type = None
-		self.nsec3 = None
+		self.nsec3 = nsec3
+		self.algo = KEY_ALGO_NSEC
+		if nsec3: self.algo = KEY_ALGO_NSEC3
 		
 		self.file_name = None
 		self.timingData = {}
@@ -159,11 +160,9 @@ class SigningKey(object):
 			self.file_name = file_name
 			readKey(file_name)
 		elif action == 'ZSK':
-			zsk_algo = KEY_ALGO_NSEC
-			if nsec3: zsk_algo = KEY_ALGO_NSEC3
 			inactive_from_now = ZSK_P_A_INTERVAL + ZSK_A_I_INTERVAL
 			delete_from_now = inactive_from_now + ZSK_I_D_INTERVAL
-			s = 'dnssec-keygen -a ' + zsk_algo + ' -b ' + repr(KEY_SIZE_ZSK) + ' -n ZONE ' \
+			s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(KEY_SIZE_ZSK) + ' -n ZONE ' \
 				+ '-A +' + repr(ZSK_P_A_INTERVAL) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
 				+ '-D +' + repr(delete_from_now) +'d ' + name
 			if opts.debug: print(s)
@@ -177,7 +176,7 @@ class SigningKey(object):
 		elif action == 'KSK':
 			inactive_from_now = KSK_P_A_INTERVAL + KSK_A_I_INTERVAL
 			delete_from_now = inactive_from_now + KSK_I_D_INTERVAL
-			s = 'dnssec-keygen -a ' + KEY_ALGO_KSK + ' -b ' + repr(KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
+			s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
 				+ '-A +' + repr(KSK_P_A_INTERVAL) + 'd -I +' + repr(inactive_from_now) + 'd ' \
 				+ '-D +' + repr(delete_from_now) + 'd ' + name
 			if opts.debug: print(s)
@@ -200,6 +199,23 @@ class SigningKey(object):
 		
 		return self.type + ':'+ self.name+ ': A:'+ getKeyTimingData('A') + ' I:'+ getKeyTimingData('I') + ' D:'+ getKeyTimingData('D')
 	
+	def ds(self):			# create delegate signer RR from KSK
+		result = None
+		
+		if self.type != 'KSK':
+			script.exit(1, "?Can't create DS from ZSK (internal inconsitency)" + self.name)
+
+		s = 'dnssec-dsfromkey ' + DIGEST_ALGO_DS + ' ' + self.file_name
+		if opts.debug: print(s)					  
+		try:									  
+			result = shell(s, stdout='PIPE').stdout.strip()
+		except script.CommandFailed:			  
+		    script.exit(1, '?Error while creating DS RR for ' + self.name)
+		self.file_name = result + '.key'		  
+
+		if opts.debug: print(result)					  
+		return result
+		
 	def createNSEC3PARAM():
 		salt = binascii.b2a_hex(rand.get_random_bytes(6)).decode('ASCII').upper()
 		
@@ -210,13 +226,13 @@ class managedZone(object):
 	def __init__(self, name):
 		self.name = name
 		self.cfg = configparser.ConfigParser()
-		self.cfg['DNSsec configuration'] = \
-										{'Method': 'None',		# NSEC or NSEC3 \
-										 'Registrar': 'Local'} 	# Joker, Ripe
+		sc = 'DNSsec configuration'
+		self.cfg[sc] = {'Method': 'None',		# NSEC or NSEC3 \
+						'Registrar': 'Local'} 	# Joker, Ripe
 		self.stat = configparser.ConfigParser()
-		self.stat['DNSsec status'] = \
-										{'State': 'Idle',		#  \
-										 'Error': 'None'} 		# 
+		ss = 'DNSsec status'
+		self.stat[ss] = {'State': 'Idle',		#  \
+						 'Error': 'None'} 		# 
 
 		self.ksks = []
 		self.zsks = []
@@ -234,11 +250,9 @@ class managedZone(object):
 					testcfg.read(file_name)
 					for opt in cfg.options(section_name):
 						if opt not in testcfg.options(section_name):
-							print('?Missing option ' + opt + ' in configuration/status file "' + domain_name + '/' + file_name + '"') 
-							sys.exit(1)
+							script.exit(1, '?Missing option ' + opt + ' in configuration/status file "' + domain_name + '/' + file_name + '"') 
 				except:						# configparser complained about syntax
-					print('?Trash in configuration file "' + domain_name + '/' + file_name + '"')
-					sys.exit(1)
+					script.exit(1, '?Trash in configuration file "' + domain_name + '/' + file_name + '"')
 			except IOError:					# file not found
 				print('%Missing zone config/status for ' + domain_name + '; creating ' + file_name)
 				try:
@@ -247,8 +261,7 @@ class managedZone(object):
 				except IOError:				# no write permission
 					(exc_type, exc_value, exc_traceback) = sys.exc_info()
 					errmsg = "?Can't create file, because %s" % (exc_value)
-					print(errmsg)
-					exit(1)
+					script.exit(1, errmsg)
 			cfg.read(file_name)
 		
 		path(self.name).cd()
@@ -274,16 +287,23 @@ class managedZone(object):
 					self.ksks.append(k)
 				elif k.type == 'ZSK':
 					self.zsks.append(k)
-		if len(self.ksks) < 1:
-			self.ksks.append(SigningKey('KSK', self.name, ''))
-		if len(self.zsks) < 1:
-			self.zsks.append(SigningKey('ZSK', self.name, ''))
+		if self.cfg[sc]['Method'] != 'None':
+			nsec3 = False
+			if self.cfg[sc]['Method'] == 'NSEC3':
+				nsec3 = True
+			if len(self.ksks) < 1:
+				k = (SigningKey('KSK', self.name, '', nsec3=nsec3))
+				ds = k.ds()
+				self.ksks.append(k)
+			if len(self.zsks) < 1:
+				self.zsks.append(SigningKey('ZSK', self.name, '', nsec3=nsec3))
 		if opts.debug:
 			for key in self.ksks:
 				print(key.__str__())
 		if opts.debug:
 			for key in self.zsks:
 				print(key.__str__())
+
 		path('..').cd()
 
 
