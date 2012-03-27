@@ -34,9 +34,9 @@
 # -----------------------------------------
 # Configurables
 # -----------------------------------------
-import dns_joker_conf as dmapi
+##import dns_joker_conf as dmapi
 
-DEBUG = True
+##DEBUG = True
 # -----------------------------------------
 
 # -----------------------------------------
@@ -52,15 +52,17 @@ theConnection = False
 # -----------------------------------------
 # classes
 # -----------------------------------------
-class Connection(object):
+class ConnectionJoker(object):
 	"""Connection to Joker.com DMAPI server"""
+	global DEBUG
 	def __init__(self):
 		self.myConnection = 0
 		self.session = {}
 	
 		try:
-			self.myConnection = http.client.HTTPSConnection(dmapi.server)
-			self.myConnection.request("GET", '/request/login?username=' + dmapi.account_name + '&password=' + dmapi.account_pw)
+			self.myConnection = http.client.HTTPSConnection(conf.registrar['Joker']['Server'])
+			self.myConnection.request("GET", '/request/login?username=' + 
+				conf.registrar['Joker']['account_name'] + '&password=' + conf.registrar['Joker']['account_pw'])
 		except Exception:
 			print('?Failed to connect to Joker.com DMAPI server, because ', str(sys.exc_info()[1]))
 			sys.exit(1)
@@ -91,14 +93,15 @@ class Connection(object):
 # -----------------------------------------
 # Functions
 # -----------------------------------------
-def request(query_string):
+def requestJoker(query_string):
+	
 	status = {}
 	result = []
 	header_done = False
-	global theConnection
+	global theConnection, DEBUG
 	
 	if not theConnection:
-		theConnection = Connection()
+		theConnection = ConnectionJoker()
 	c = theConnection.conn()
 	if '?' in query_string:
 		s = '/request/' + query_string + '&auth-sid=' + theConnection.sid()
@@ -130,34 +133,45 @@ def request(query_string):
 	    sys.exit(1)
 	    
 	return result
+
+def regRemoveAllDS(zone):
+	if zone.split('.')[-1] not in 'arpa':
+		cl = request('domain-modify?domain=' + zone + '&dnssec=0')
+		for c in cl:
+			print(c)
+		return True
+	print('?Internal inconsitency: regRemoveAllDS(): DS-Removal of .arpa. not implemented')
+	return False
+	
+def regAddDS(zone, index, tag, alg, digest_type, digest, flags, pubkey_base64):
+	tld = zone.split('.')[-1]
+	if tld not in 'arpa':
+		if index not in range(1,6):
+			print('?Internal inconsitency: regAddDS(): argument index is %d. This is out of range' % index)
+			return False
+		if tld != 'de':
+			if (None, '') in (tag, alg, digest_type, digest):
+				print('?Internal inconsitency: regAddDS(): at least one argument is empty: "%d","%d","%d","%s"'
+					% (tag, alg, digest_type, str(digest)))
+				return False
+			cl = request('domain-modify?zone=%s&dnssec=1&ds-%d=%d:%d:%d:%s' % (zone, index, tag, alg, digest_type, digest))
+			for c in cl:
+				print(c)
+			return True
+		else:
+			if DEBUG: print('[zone=%s, index=%d, tag=%d, alg=%d, digest_type=%d, digest=%s, flags=%d, pubkey_base64=%s]' 
+				% (zone, index, tag, alg, digest_type, digest, flags, pubkey_base64))
+			return True
+			if (None, '') in (alg, flags, pubkey_base64):
+				print('?Internal inconsitency: regAddDS(): at least one argument is empty: "%d","%d","%s"'
+					% (alg, flags, pubkey_base64))
+				return False
+			cl = request('domain-modify?zone=%s&dnssec=1&ds-%d=3:%d:%d:%s' % (zone, alg, flags, pubkey_base64))
+			for c in cl:
+				print(c)
+			return True
+	return False	
+
 # -----------------------------------------
 # Main
 # -----------------------------------------
-
-theConnection = Connection()
-if DEBUG: print('[connected]')
-cl = request('query-contact-list?tld=de&extended-format=1')
-for c in cl:
-	print(c)
-cl = request('query-contact-list?tld=net&extended-format=1')
-for c in cl:
-	print(c)
-cl = request('query-domain-list?showstatus=1&showgrants=1')
-for c in cl:
-	print(c)
-
-cl = request('query-whois?domain=chaos1.de')
-for c in cl:
-	print(c)
-cl = request('query-whois?domain=nussberg.de')
-for c in cl:
-	print(c)
-cl = request('query-whois?domain=lrau.net')
-for c in cl:
-	print(c)
-cl = request('query-whois?contact=code-3464')
-for c in cl:
-	print(c)
-cl = request('query-whois?host=ns4.lrau.net')
-for c in cl:
-	print(c)

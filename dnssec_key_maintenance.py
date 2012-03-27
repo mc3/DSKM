@@ -43,13 +43,14 @@ from Crypto import Random as rand
 import binascii
 
 import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY.DNSKEY, dns.rcode
-import dns.dnssec
+import dns.dnssec, dns.zone
 
 import json
 import os
 
 import re
 
+import pprint
 # -----------------------------------------
 # Configurables
 # -----------------------------------------
@@ -146,19 +147,28 @@ NS_TIMEOUT = 10                 # name server timeout
 #--------------------------
 #   End Adjustables
 #------------------------------------------------------------------------------
-
+import dnssec_key_registrar as reg
 
 script.doc.purpose = \
     'Do maintenace of DNSsec keys.\n Create and delete them as necessary'
-script.doc.args = 'FUNCT'
+
 opts.add('verbose', action='store_true')
 opts.add('debug', action='store_true')
 
+opts.add('stopSigningOfZone', type="string",
+                  help="Initiate procedure to make a zone unsigned")
+                  
 current_timestamp = 0
+
 master_resolver = dns.resolver.Resolver()
 master_resolver.lifetime = NS_TIMEOUT
 master_resolver.nameservers = (conf.master,)
 master_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
+
+ext_recursive_resolver = dns.resolver.Resolver()
+ext_recursive_resolver.lifetime = NS_TIMEOUT
+ext_recursive_resolver.nameservers = (conf.external_recursives,)
+ext_recursive_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
 
 
 #--------------------------
@@ -195,7 +205,10 @@ class SigningKey(object):
         self.dnssec_flags = 0   # flags
         self.sepkey = 0         # sep flag =KSK)
         self.dnssec_alg = 0     # key algorithm
+        self.pubkey_base64 = ''
 
+        self.dsHash = [None,None]  # 2 DS hashes
+        
         self.mypath = path(ROOT_PATH + '/' + name)
         self.mypath.cd()
         if opts.debug: print("[Instantiating SigningKey; pwd=%s.]" % (self.mypath))
@@ -253,6 +266,9 @@ class SigningKey(object):
                     self.dnssec_flags = dnskey_rdata.flags
                     self.sepkey = self.dnssec_flags & 0x1;
                     self.dnssec_alg = dnskey_rdata.algorithm
+                    self.pubkey_base64 = dns.rdata._base64ify(dnskey_rdata.key)
+                    ##self.pubkey_base64 = dns.rdata._base64ify(dnskey_rdata.key, chunksize=2000)
+                    
                     if opts.debug: print("[Read DNSSEC key id=%d with flags=%d alg=%d]" % (self.keytag, self.dnssec_flags, self.dnssec_alg))
                 else:
                     print('?Unrecognized line in key file: ' + keyFileName)
@@ -341,7 +357,9 @@ class SigningKey(object):
             print('?Internal inconsitency: SigningKey instantiating  with wrong task ' + task)
             e = AbortedZone("")
             raise e
-        
+        if opts.verbose: print('[Instatiated key %s]' % self.verboseStr())
+        if opts.debug: print('[Instatiated public key %s]' % self.pubkey_base64)
+
     def __str__(self):
         def getKeyTimingData(type):
             if self.timingData[type] == 0:
@@ -351,33 +369,86 @@ class SigningKey(object):
         
         return self.type + ':'+ self.name+ ': A:'+ getKeyTimingData('A') + ' I:'+ getKeyTimingData('I') + ' D:'+ getKeyTimingData('D')
     
-    def CreateDS(self):         # create delegate signer RR from KSK
-        self.mypath.cd()
-        result = None
+    def verboseStr(self):
+        return str('%s/%s/%s(A:%s)' % (self.name, self.type, self.keytag, date.fromtimestamp(self.timingData['A']).isoformat()))
+
+    def digestOfDS(self):
+        def read1DS(i):
+            dg2 = ''
+            s = str('dnssec-dsfromkey -%d %s' % (i, self.file_name))
+            try:                                      
+                result = shell(s, stdout='PIPE').stdout.strip()
+                (x1,x2,x3,x4,x5,x6,dg1,dg2) = result.split(None)
+                return dg1 + dg2
+            except script.CommandFailed:              
+                print('?Error while creating DS RR for ' + self.name)
+                e = AbortedZone("")
+                raise e
         
         if self.type != 'KSK':
-            print("?Can't create DS from ZSK (internal inconsitency)" + self.name)
+            print("?Can't create/delete DS from ZSK (internal inconsitency)" + self.name)
             e = AbortedZone("")
             raise e
+        if not self.dsHash[0]:
+            self.dsHash[0] = read1DS(1)
+            self.dsHash[1] = read1DS(2)
+        return self.dsHash
+    
+    def UpdateDS(self, activity, secondKey):    # create/submit/retire signer RR from KSK
+        if self.type != 'KSK':
+            print("?Can't create/delete DS from ZSK (internal inconsitency)" + self.name)
+            e = AbortedZone("")
+            raise e
+        if self.zone.pcfg['Registrar'] == 'Local':
+            if self.zone.parent_dir != None:
+                return self.UpdateLocalDS(activity, secondKey)
+            return
+        else:
+            self.zone.UpdateRemoteDS(activity, self.keytag)
+    
+    def UpdateLocalDS(self, activity, secondKey):    # create/submit/retire signer RR from KSK
+        self.mypath.cd()
+        result = ''
         
-        if opts.verbose: print('[Creating DS-RR from KSK %s]' % self.file_name)
-        s = 'dnssec-dsfromkey ' + self.file_name
-        if opts.debug: print(s)                   
-        try:                                      
-            result = shell(s, stdout='PIPE').stdout.strip()
-        except script.CommandFailed:              
-            print('?Error while creating DS RR for ' + self.name)
+        if activity != 'retire' and activity != 'delete':
+            if opts.verbose: print('[Creating DS-RR from KSK %s]' % self.verboseStr())
+            s = 'dnssec-dsfromkey ' + self.file_name
+            if opts.debug: print(s)                   
+            try:                                      
+                result = shell(s, stdout='PIPE').stdout.strip()
+                result = result + '\n'
+            except script.CommandFailed:              
+                print('?Error while creating DS RR for ' + self.name)
+                e = AbortedZone("")
+                raise e
+        elif activity == 'retire':
+            if opts.verbose: print('[Deleting local DS-RR from KSK %s]' % self.verboseStr())
+        else:
+            if opts.verbose: print('[Deleting all local DS-RRs from zone %s]' % self.name)
+
+        ds_file_name = self.zone.parent_dir + '/' + self.name + '.ds'
+        if opts.debug: print('[Updating local DS-RR stored in "%s"]' % (ds_file_name,))
+        old = ''
+        try:
+            if secondKey:
+                with open(ds_file_name, 'r', encoding="ASCII") as fd:
+                    if activity == 'retire':
+                        lines = fd.readlines()
+                        old = ''.join(lines[2:3])
+                    elif activity == 'delete':
+                        pass
+                    else:
+                        old = fd.read()
+            with open(ds_file_name, 'w', encoding="ASCII") as fd:
+                fd.write(old + result)
+        except:
+            (exc_type, exc_value, exc_traceback) = sys.exc_info()
+            print('?Error while reading/writing local DS-RR file for KSK %s \n\tbecause %s' % (self.verboseStr(), exc_value))
             e = AbortedZone("")
             raise e
-        ds_file_name = ''
-        if self.zone.pcfg['Registrar'] == 'Local' and self.zone.parent_dir != None:
-            ds_file_name = self.zone.parent_dir + '/'
-            self.updateSOA(ds_file_name + self.zone.parent + '.zone')
-        if opts.debug: print('[DS-RR will be stored in "%s"]' % (ds_file_name,))
-        ds_file_name = ds_file_name + self.name + '.ds'
-        with open(ds_file_name, 'w', encoding="ASCII") as fd:
-          fd.write(result + '\n')
-            
+        self.updateSOA(self.zone.parent_dir + '/' + self.zone.parent + '.zone')
+                
+
     def updateSOA(self, filename): # update serial of SOA in zone file
         timestamp = datetime.now()
         current_date = timestamp.strftime('%Y%m%d')
@@ -409,7 +480,7 @@ class SigningKey(object):
                 raise e
         try:
              res = str(shell('rndc reload', stderr='PIPE').stderr)
-             if DEBUG: print('[Rndc reload returned: %s]' % (str))
+             if DEBUG: print('[Rndc reload returned: %s]' % (res))
         except script.CommandFailed:
              print('?Error while reloading zones after updating SOA of %s ( %s )' % (self.name, res))
              e = AbortedZone("")
@@ -439,14 +510,17 @@ class SigningKey(object):
                                                     # not initial state
         if stt[state]['c'](self, stt[state]['ca'], secondKey):      # check condition for state transition
             if 'a' in stt[state].keys():                            # succeeded: action present?
-                stt[state]['a'](self, stt[state]['aa'], secondKey)  # yes, call it
+                if 'aa' in stt[state].keys():                           # yes, call it - arg present?
+                    stt[state]['a'](self, stt[state]['aa'], secondKey)  # yes, call it with arg
+                else:
+                    stt[state]['a'](self, secondKey)
             if 'ns' in stt[state].keys():           # 'next state' key present?
                 state =  stt[state]['ns']           # yes, use it
             else:
                 state = state + 1           # no, increment it
             if DEBUG: print('[New state is %d (%s)]' % (state, stt[state]['s']))
-            if opts.verbose: print('[State transition of %s/%s/%s(A:%s) from %d to %d (%s) after %s retries]' %
-                (self.name, self.type, self.keytag, date.fromtimestamp(self.timingData['A']).isoformat(),
+            if opts.verbose: print('[State transition of %s from %d to %d (%s) after %s retries]' %
+                (self.verboseStr(),
                 self.zone.pstat[key]['State'], state, stt[state]['s'], self.zone.pstat[key]['Retries']))
             self.zone.pstat[key]['State'] = state
             self.zone.pstat[key]['Retries'] = str(0)
@@ -472,16 +546,21 @@ class SigningKey(object):
             return False                         # only primary key can create second key/ds
         if DEBUG: print('[delete_a(key_type) called]')
         self.mypath.cd()                        # change to zone directory
-        for kf in self.mypath.list('*'):        # loop once per file in zone dir
+        for kf in self.mypath.list('./*'):      # loop once per file in zone dir
+            if DEBUG: print('[Candidate for deleting: %s]' % (kf))
             if key_type == 'delete_all' and fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*') or \
-                fnmatch.fnmatch(kf, 'K*' + self.keytag + '.+*'): # delete all keyfiles or our keyfile
+                fnmatch.fnmatch(kf, 'K*' + str(self.keytag) + '.+*'): # delete all keyfiles or our keyfile
+                if DEBUG: print('[Matched for deleting: %s]' % (kf))
                 try:
                     os.remove(path(kf))
+                    if DEBUG: print('[Deleted: %s]' % (kf))
                 except:
                     (exc_type, exc_value, exc_traceback) = sys.exc_info()
                     print("?Can't delete keyfile, because %s" % (exc_value))
                     e = AbortedZone("")
                     raise e
+        if key_type == 'delete_all':
+            self.zone.pcfg['Method'] = 'unsigned'
         return True
     
     def rename_a(self, key_type, secondKey):
@@ -490,8 +569,9 @@ class SigningKey(object):
     
     def submit_ds(self, activity, secondKey):
         if DEBUG: print('[submit_ds(activity) called]')
-        self.CreateDS()
-        return True
+        if (('1' in activity or 'retire' in activity) and secondKey) or ('2' in activity and not secondKey):
+            return False
+        return self.UpdateDS(activity, secondKey)
     
     def set_delete_time(self, secondKey):
         if DEBUG: print('[set_delete_time() called]')
@@ -507,8 +587,8 @@ class SigningKey(object):
     # -----------------------------
     # Tests for state transitions in SigningKey
     # -----------------------------
-    def test_if_included(self, key_type, secondKey):     # test, if included in zone by our master
-        global master_resolver
+    def test_if_included(self, key_type, secondKey):    # test, if included in zone by our master
+        global master_resolver                          # included means: used for signing
         
         if '1' in key_type and secondKey or '2' in key_type and not secondKey:
             return False
@@ -540,25 +620,31 @@ class SigningKey(object):
             return False
         else:
             try:
-                res = r.query(self.name, 'DNSKEY')
+                zone = dns.zone.from_xfr(dns.query.xfr(conf.master, self.name, relativize=False, lifetime=30.0), relativize=False)
+                my_covers = dns.rdatatype.DNSKEY    # DNSKEYs signed by KSK
+                if self.type == 'ZSK':
+                   my_covers = dns.rdatatype.SOA    # others signed by ZSK
+                ##import pdb;pdb.set_trace()
+                rds = zone.find_rrset(self.name + '.', 'RRSIG', covers=my_covers)
+                for rrsig_rdata in rds.items:
+                    key_tag = rrsig_rdata.key_tag
+                    if DEBUG: print('[test_if_included(key_type, secondKey) matching keytag: %s == %s]' % (key_tag, self.keytag))
+                    if key_tag == self.keytag:
+                        if DEBUG: print('[test_if_included(key_type, secondKey) RRSIG matched ourselves]')
+                        return True                 # at least one RR signed by ourselves
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 pass
-            except (dns.exception.Timeout):
+            except (dns.exception.Timeout, IOError):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
-                errmsg = "%s: DNSKEY query timed out. %s, %s" % \
+                errmsg = "%s: RRSIG query network error: (Timeout or connection refused). %s, %s" % \
                     (self.name, exc_type, exc_value)
                 print('? ' + errmsg)
                 e = AbortedZone('? ' + errmsg)
                 raise e
-            else:
-                for dnskey_rdata in res.rrset.items:
-                    keytag = dns.dnssec.key_id(dnskey_rdata)
-                    if keytag == self.keytag:
-                        return True
         return False
     
     def test_if_excluded(self, key_type, secondKey):       # test, if excluded from zone by our master
-        if DEBUG: print('[test_if_excluded(' + key_type + ') called]')
+        if DEBUG: print('[test_if_excluded(' + key_type + ') called]') # (no longer used for signing)
         return not self.test_if_included(key_type, secondKey)
     
     def test_if_time_reached(self, time_type, secondKey):  # test, if arbitrary point in time reached
@@ -638,7 +724,8 @@ class SigningKey(object):
         salt = binascii.b2a_hex(rand.get_random_bytes(6)).decode('ASCII').upper()
     
 #------------------------------------------------------------------------------
-
+# class managedZone
+#------------------------------------------------------------------------------
 class managedZone(object):
     """managedZone"""
 
@@ -656,6 +743,8 @@ class managedZone(object):
         self.pstat['OldMethod'] = 'unsigned'# NSEC or NSEC3 \
         self.pstat['OldRegistrar'] = 'Local'    # Joker, Ripe
 
+        self.pstat['submitted_to_parent'] = []  # list of KSK tags, whose DS have been submitted to parent
+
         self.ksks = []
         self.zsks = []
     
@@ -664,6 +753,8 @@ class managedZone(object):
         
         self.mypath = path(ROOT_PATH + '/' + name)
         self.mypath.cd()
+        
+        self.rmoteDSchanged = False
         
         #-----------------------------
         # functions in managedZone.__init__
@@ -749,10 +840,10 @@ class managedZone(object):
                 print('? Wrong OldMethod "%s" in zone config of %s' % (self.pstat['Method'], self.name))
                 e = AbortedZone("")
                 raise e
-
+            
             if opts.debug:
                 print('[KSK state is %d]' % (self.pstat['ksk']['State']))
-        
+            
             if self.pstat['ksk']['State'] == -1:    # state idle
                 deleteKeyFiles()               # delete any key files
             else:
@@ -784,17 +875,6 @@ class managedZone(object):
                 
                 self.zsks.append(SigningKey('ZSK', self.name, '', self, nsec3=nsec3))
             
-            self.ksks.sort(key=SigningKey.activeTime, reverse=True)
-            second = False
-            for k in self.ksks:
-                k.state_transition(second)
-                second = True
-
-            self.zsks.sort(key=SigningKey.activeTime, reverse=True)
-            second = False
-            for k in self.zsks:
-                k.state_transition(second)
-                second = True
             if opts.debug:
                 for key in self.ksks:
                     print(key.__str__())
@@ -805,8 +885,6 @@ class managedZone(object):
             self.pstat['OldMethod'] = self.pcfg['Method']
             self.pstat['OldRegistrar'] = self.pcfg['Registrar']
             
-            saveState()
-                
         except AbortedZone:
             print('?Aborting zone ' + self.name)
             if self.pstat['ksk']['State'] == -1 or self.pstat['zsk']['State'] == -1:
@@ -822,7 +900,67 @@ class managedZone(object):
     #       if self.pcfg['Method'] != self.pstat['OldMethod']:
     #           print('[Method of domain %s has changed from %s to %s]' % (self.name, self.pstat['OldMethod'], self.pcfg['Method']))
     #           script.exit(1, '?Changing of methods not yet implemented')
+    #------------------------------------------------------------------------------
+    # end of ManagedZone.__init__
+    #------------------------------------------------------------------------------
+        
+    def performStateTransition(self):
+        self.rmoteDSchanged = False
+        self.ksks.sort(key=SigningKey.activeTime)
+        second = False
+        for k in self.ksks:
+            if k.state_transition(second):
+                break
+            second = True
+
+        self.zsks.sort(key=SigningKey.activeTime)
+        second = False
+        for k in self.zsks:
+            if k.state_transition(second):
+                break
+            second = True
+       
+        if self.rmoteDSchanged:
+            if len(self.pstat['submitted_to_parent']) == 0: # removed all DS from remote parents?
+                if not regRemoveAllDS(zone):
+                    print("?Failed to delete all DS-RR of %s at registrar %s" % (self.name, self.pcfg['Registrar']))
+                    e = AbortedZone()
+                    raise e
+            else:
+                i = 1
+                for tag in self.pstat['submitted_to_parent']:
+                    for key in self.ksks:
+                        if key.keytag == tag:
+                            regAddDS(self.name, i, key.keytag, key.dnssec_alg, 1, key.dsHash[0], key.dnssec_flags,
+                            key.pubkey_base64)
+                            regAddDS(self.name, i+1, key.keytag, key.dnssec_alg, 2, key.dsHash[1], key.dnssec_flags,
+                            key.pubkey_base64)
+                            break
+                    i = i +2
+            
+        self.saveCfgOrState('state')
     
+    def validate(self):                     # validate zone
+        global ext_recursive_resolver
+         
+        r = ext_recursive_resolver
+        try:
+            res = r.query(self.name, 'DS')
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            pass
+        except (dns.exception.Timeout):
+            (exc_type, exc_value, exc_traceback) = sys.exc_info()
+            errmsg = "%s: DS query timed out. %s, %s" % \
+                (self.name, exc_type, exc_value)
+            print('? ' + errmsg)
+            e = AbortedZone('? ' + errmsg)
+            raise e
+        else:                               # ** FIXME ***
+            for rd in res.rrset.items:
+                keytag = rd.key_tag
+                if keytag == self.keytag:
+                    return True
+        return False
     
     def createFollowUpKey(self, sender):    # usually called by action routine to create a new key
         nsec3 = False
@@ -834,8 +972,61 @@ class managedZone(object):
         elif k.type == 'ZSK':
              self.zsks.append(k)
         return True
-        
     
+    
+    def UpdateRemoteDS(self, activity, keytag):
+        if activity == 'retire':
+            self.pstat['submitted_to_parent'].remove(keytag)
+        elif activity == 'delete':
+            self.pstat['submitted_to_parent'] = []
+        elif 'publish' in activity:
+            self.pstat['submitted_to_parent'].append(keytag)
+        else:
+            raise AssertionError('?Wrong activity "%s" in UpdateRemoteDS() with zone %s' % (activity, self.name))
+        self.rmoteDSchanged = True
+            
+        
+    def saveCfgOrState(self, action):       # action is 'config' or 'state'
+        if action == 'config':
+            cfg = self.pcfg
+            filename = 'dnssec-conf-' + self.name
+        elif action == 'state':
+            cfg = self.pstat
+            filename = 'dnssec-stat-' + self.name
+        else:
+            raise AssertionError('?Wrong action "%s" in saveCfgOrState() with zone %s' % (action, self.name))
+        
+        if opts.debug:
+            print('[New %s of %s contains:\n %s ]' % (action, self.name, str(cfg)))
+        try:
+            with open(filename, 'w') as fd:
+                json.dump(cfg, fd, indent=8)
+        except:                  # no write permission
+        ##except IOError:                 # no write permission
+            (exc_type, exc_value, exc_traceback) = sys.exc_info()
+            print("?Can't create status file, because %s" % (exc_value))
+            e = AbortedZone('')
+            raise e
+    
+    def stopSigning(self):
+        if self.pstat['ksk']['State'] < 2:
+            print("?Can't stop signing in state %s" % (self.pstat['ksk']['State']))
+            return 1
+        if self.pstat['ksk']['State'] > 10:
+            print("%Termination of signing already in progress (state=%s)" % (self.pstat['ksk']['State']))
+            return 0
+        secondKey = False
+        for k in self.ksks:
+            k.UpdateDS('delete', False) # remove all DS-RR in parent zone
+            k.set_delete_time(secondKey)
+            secondKey = True
+        secondKey = False
+        for k in self.zsks:
+            k.set_delete_time(secondKey)
+            secondKey = True
+        self.pstat['ksk']['State'] = 11
+        self.saveCfgOrState('state')
+        return 0         
 
 #--------------------------
 #   Functions
@@ -872,11 +1063,28 @@ def main():
             zone_dirs.append(dir.name)
     zone_dirs.sort(key = len)
     zone_dirs.reverse()
+    
+    if opts.stopSigningOfZone:
+        zone_name = opts.stopSigningOfZone
+        print('[Stopping signing of %s]' % zone_name)
+        if zone_name in zone_dirs:
+            try:
+                z = managedZone(zone_name)
+                res = z.stopSigning()
+                return res
+            except:
+                print('?Failed to stop signing of zone ' + zone_name)
+                return 1
+        else:
+            print('?%s not a managed zone.' % opts.stopSigningOfZone)
+            return 1
+    
     if opts.debug: print('[ Doing zones: ]')
     if opts.debug: print( zone_dirs )
     for zone_name in zone_dirs:
         try:
             zones[zone_name] = managedZone(zone_name)
+            zones[zone_name].performStateTransition()
         except AbortedZone as a:
             print(a.data)
             print('%Skipping zone ' + zone_name)
