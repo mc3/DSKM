@@ -36,7 +36,7 @@ from script import path, shell, opts
 import script
 import fnmatch
 from datetime import date, datetime
-
+import time
 
 # for salt
 from Crypto import Random as rand
@@ -56,33 +56,39 @@ import pprint
 # -----------------------------------------
 import dnssec_key_maintenance_conf as conf
 """
-# -----------------------------------------
+#------------------------------------------------------------------------------
 # the import should define:
+# -----------------------------------------
+
+# -----------------------------------------
+# DNS servers to query
 # -----------------------------------------
 # own dns servers
 master = '2.3.4.5'
 external_secondaries = ('ns2.my.domain', 'ns3.my.domain', 'ns4.my.domain')
 external_recursives = ()
+
+#--------------------------
 # registrars
+#--------------------------
+
 registrar = {}
 registrar['TwoCows'] = {'server': 'dmapi.twocows.net',
 				        'account_name': 'my_user_name',
 				        'account_pw': 'blahblah' }
-"""
+
 #------------------------------------------------------------------------------
-#   Adjustables
+#   Root of key management directories
 #--------------------------
-##ROOT_PATH = '~/Developer/DNSsec/named/'
 ROOT_PATH = '/var/named/master/signed'
 
 #--------------------------
 #   policy constants ( in days)
 #--------------------------
-TTL = 1                         # ttl of SOA, NS and others; A/AAAA may be shorter
+
 SOA_EXPIRE_INTERVAL = 7         #  SOA expire time
 SOA_NEGATIVE_CACHE_INTERVAL = 1
 
-"""
 # Pre-Publication Method with ZSK - cascaded intervals for timing metadata
                                 # published immediately after generation
 ZSK_P_A_INTERVAL = 0            # active (used to sign RRsets) 7 days after publish
@@ -94,44 +100,7 @@ ZSK_I_D_INTERVAL = 7            # deleted 7 days after inactive
 KSK_P_A_INTERVAL = 0            # active (used to sign DNSKEY RRsets) 7 days after publish
 KSK_A_I_INTERVAL = 360          # inactive 360 days after active
 KSK_I_D_INTERVAL = 7            # deleted 7 days after inactive
-"""
-# Pre-Publication Method with ZSK - cascaded intervals for timing metadata
-                                # published immediately after generation
-ZSK_P_A_INTERVAL = 0            # active (used to sign RRsets) 7 days after publish
-ZSK_A_I_INTERVAL = 1            # inactive 30 days after active
-ZSK_I_D_INTERVAL = 1            # deleted 7 days after inactive
 
-# Double-RRset Method with KSK - cascaded intervals for timing metadata
-                                # published immediately after generation
-KSK_P_A_INTERVAL = 0            # active (used to sign DNSKEY RRsets) 7 days after publish
-KSK_A_I_INTERVAL = 2            # inactive 360 days after active
-KSK_I_D_INTERVAL = 1            # deleted 7 days after inactive
-
-# key algorithm
-""" 2012-03-04 bind-users:
-
-...Second, why do I get multiple DS records as response?
-
-You will always get a 2 DS Records in response. One for SHA-1 and second
-for SHA-256.
-
-I was reading the RFCs, but according to that, there's no provision of
-SHA-256. According to RFC 4034, 1 means MD5 and 2 means Diffie-Hellman
-(appendix A1)
-
-And RFC4024 is seven years old. No SHA256 back then.
-
-See RFC6014 which allows IANA to assign new algorithm numbers as
-needed without a new RFC. SHA256 is the current preferred algorithm,
-while SHA-1 is still routinely used as some DNSSEC software may not
-support SHA256 yet. Both MD5 and Diffie-Hellman are obsolete. I
-suspect SHA-1 will be deprecated soon. I am unaware of any DNSSEC
-software that does not support SHA256 at this time, but I suspect
-someone, somewhere is running it.
--- 
-R. Kevin Oberman, Network Engineer
-E-mail: kob6558@gmail.com
-"""
 KEY_ALGO_NSEC = 'RSASHA256'
 KEY_ALGO_NSEC3 = 'NSEC3RSASHA1'
 ## use both: DIGEST_ALGO_DS = '-2'          # SHA-256
@@ -143,9 +112,9 @@ TTL_DNSKEY = 86400
 TTL_DS = 86400
 
 NS_TIMEOUT = 10                 # name server timeout
-
-#--------------------------
-#   End Adjustables
+"""
+#------------------------------------------------------------------------------
+# end defines of import  dnssec_key_maintenance_conf as conf
 #------------------------------------------------------------------------------
 import dnssec_key_registrar as reg
 
@@ -158,15 +127,13 @@ opts.add('debug', action='store_true')
 opts.add('stopSigningOfZone', type="string",
                   help="Initiate procedure to make a zone unsigned")
                   
-current_timestamp = 0
-
 master_resolver = dns.resolver.Resolver()
-master_resolver.lifetime = NS_TIMEOUT
+master_resolver.lifetime = conf.NS_TIMEOUT
 master_resolver.nameservers = (conf.master,)
 master_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
 
 ext_recursive_resolver = dns.resolver.Resolver()
-ext_recursive_resolver.lifetime = NS_TIMEOUT
+ext_recursive_resolver.lifetime = conf.NS_TIMEOUT
 ext_recursive_resolver.nameservers = (conf.external_recursives,)
 ext_recursive_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
 
@@ -187,7 +154,7 @@ class SigningKey(object):
     """SigningKey"""
     global KSTT, ZSTT
     
-    def __init__(self, task, name, file_name, sender, nsec3 = False, clone = False):
+    def __init__(self, task, name, file_name, sender, nsec3=False, cloneFromKeyInactiveAt=0):
         
         self.name = name
         self.file_name = None
@@ -196,8 +163,8 @@ class SigningKey(object):
 
         self.type = None
         
-        self.algo = KEY_ALGO_NSEC
-        if nsec3: self.algo = KEY_ALGO_NSEC3
+        self.algo = conf.KEY_ALGO_NSEC
+        if nsec3: self.algo = conf.KEY_ALGO_NSEC3
         
         # values read from key file
         self.timingData = {}
@@ -209,7 +176,7 @@ class SigningKey(object):
 
         self.dsHash = [None,None]  # 2 DS hashes
         
-        self.mypath = path(ROOT_PATH + '/' + name)
+        self.mypath = path(conf.ROOT_PATH + '/' + name)
         self.mypath.cd()
         if opts.debug: print("[Instantiating SigningKey; pwd=%s.]" % (self.mypath))
 
@@ -236,8 +203,7 @@ class SigningKey(object):
                 if result == 'UNSET':
                     return 0
                 else:
-                    result = int(result) // ( 3600 * 24 ) * 3600 * 24
-                return result
+                    return int(result)
             
             fd = None
             try:
@@ -271,7 +237,7 @@ class SigningKey(object):
                     
                     if opts.debug: print("[Read DNSSEC key id=%d with flags=%d alg=%d]" % (self.keytag, self.dnssec_flags, self.dnssec_alg))
                 else:
-                    print('?Unrecognized line in key file: ' + keyFileName)
+                    print('?Unrecognized line "%s" in key file: ' % (line, keyFileName))
                     e = AbortedZone("")
                     raise e
                 if flags == '257':
@@ -307,21 +273,23 @@ class SigningKey(object):
         #-----------------------------
 
         if opts.debug:
-            print('[Creating SigningKey instance task=%s, name=%s, file_name=%s, nsec3=%s, clone=%s]' % (task, name, file_name, nsec3, clone))
+            print('[Creating SigningKey instance task=%s, name=%s, file_name=%s, nsec3=%s, cloneFromKeyInactiveAt=%d]' % (task, name, file_name, nsec3, cloneFromKeyInactiveAt))
         if task == 'read':
             self.file_name = file_name
             readKey(file_name)
         elif task == 'ZSK':
-            inactive_from_now = ZSK_P_A_INTERVAL + ZSK_A_I_INTERVAL
-            delete_from_now = inactive_from_now + ZSK_I_D_INTERVAL
-            s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(KEY_SIZE_ZSK) + ' -n ZONE ' \
-                + '-A +' + repr(ZSK_P_A_INTERVAL) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
-                + '-D +' + repr(delete_from_now) +'d -L ' + repr(TTL_DNSKEY) + ' ' + name
-            if clone:
-                inactive_from_now = ZSK_I_D_INTERVAL + ZSK_A_I_INTERVAL # prepublish + inactive - active
-                delete_from_now = inactive_from_now + ZSK_I_D_INTERVAL
-                s = 'dnssec-keygen -S ' + file_name + ' -i +0 -I +' + repr(inactive_from_now) + 'd ' \
-                    + '-D +' + repr(delete_from_now) +'d -L ' + repr(TTL_DNSKEY)
+            inactive_from_now = conf.ZSK_P_A_INTERVAL + conf.ZSK_A_I_INTERVAL
+            delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
+            s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_ZSK) + ' -n ZONE ' \
+                + '-A +' + repr(conf.ZSK_P_A_INTERVAL) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
+                + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
+            if cloneFromKeyInactiveAt != 0:
+                prepublishInterval = cloneFromKeyInactiveAt - int(time.time()) - 60  # publish  one minute from now (seconds)
+                inactive_from_now = conf.ZSK_I_D_INTERVAL + conf.ZSK_A_I_INTERVAL # prepublish + inactive - active
+                delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
+                s = 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
+                + repr(inactive_from_now) + 'd ' \
+                    + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
             if opts.debug: print(s)
             try:
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -333,16 +301,18 @@ class SigningKey(object):
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
         elif task == 'KSK':
-            inactive_from_now = KSK_P_A_INTERVAL + KSK_A_I_INTERVAL
-            delete_from_now = inactive_from_now + KSK_I_D_INTERVAL
-            s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
-                + '-A +' + repr(KSK_P_A_INTERVAL) + 'd -I +' + repr(inactive_from_now) + 'd ' \
-                + '-D +' + repr(delete_from_now) + 'd -L ' + repr(TTL_DNSKEY) + ' ' + name
-            if clone:
-                inactive_from_now = KSK_I_D_INTERVAL + KSK_A_I_INTERVAL # prepublish + inactive - active
-                delete_from_now = inactive_from_now + KSK_I_D_INTERVAL
-                s = 'dnssec-keygen -S ' + file_name + ' -i +0 -I +' + repr(inactive_from_now) + 'd ' \
-                    + '-D +' + repr(delete_from_now) +'d -L ' + repr(TTL_DNSKEY)
+            inactive_from_now = conf.KSK_P_A_INTERVAL + conf.KSK_A_I_INTERVAL
+            delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
+            s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
+                + '-A +' + repr(conf.KSK_P_A_INTERVAL) + 'd -I +' + repr(inactive_from_now) + 'd ' \
+                + '-D +' + repr(delete_from_now) + 'd -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
+            if cloneFromKeyInactiveAt != 0:
+                prepublishInterval = cloneFromKeyInactiveAt - int(time.time()) - 60  # publish  one minute from now (seconds)
+                inactive_from_now = conf.KSK_I_D_INTERVAL + conf.KSK_A_I_INTERVAL # prepublish + inactive - active
+                delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
+                s = 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
+                + repr(inactive_from_now) + 'd ' \
+                    + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
             if opts.debug: print(s)
             try:
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -365,12 +335,12 @@ class SigningKey(object):
             if self.timingData[type] == 0:
                 return 'UNSET'
             else:
-                return date.fromtimestamp(self.timingData[type]).isoformat()
+                return datetime.fromtimestamp(self.timingData[type]).isoformat()
         
         return self.type + ':'+ self.name+ ': A:'+ getKeyTimingData('A') + ' I:'+ getKeyTimingData('I') + ' D:'+ getKeyTimingData('D')
     
     def verboseStr(self):
-        return str('%s/%s/%s(A:%s)' % (self.name, self.type, self.keytag, date.fromtimestamp(self.timingData['A']).isoformat()))
+        return str('%s/%s/%s(A:%s)' % (self.name, self.type, self.keytag, datetime.fromtimestamp(self.timingData['A']).isoformat()))
 
     def digestOfDS(self):
         def read1DS(i):
@@ -523,7 +493,7 @@ class SigningKey(object):
                 (self.verboseStr(),
                 self.zone.pstat[key]['State'], state, stt[state]['s'], self.zone.pstat[key]['Retries']))
             self.zone.pstat[key]['State'] = state
-            self.zone.pstat[key]['Retries'] = str(0)
+            self.zone.pstat[key]['Retries'] = 0
             return True                         # we had a transition
         self.zone.pstat[key]['Retries'] = str(int(self.zone.pstat[key]['Retries']) + 1)
         if DEBUG: print('[New state is %d (%s)]' % (self.zone.pstat[key]['State'],stt[state]['s']))
@@ -531,6 +501,9 @@ class SigningKey(object):
     
     def activeTime(self):
         return self.timingData['A']
+    
+    def inactiveTime(self):
+        return self.timingData['I']
     
     # -----------------------------
     # Actions on state transitions in SigningKey (immediately after one test below returns true)
@@ -545,15 +518,15 @@ class SigningKey(object):
         if secondKey:
             return False                         # only primary key can create second key/ds
         if DEBUG: print('[delete_a(key_type) called]')
+        if DEBUG: print('[Deleting one/more of %s]' % self.mypath.list('K*'))
         self.mypath.cd()                        # change to zone directory
-        for kf in self.mypath.list('./*'):      # loop once per file in zone dir
-            if DEBUG: print('[Candidate for deleting: %s]' % (kf))
+        for kf in os.listdir():       # loop once per key file in zone dir
             if key_type == 'delete_all' and fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*') or \
-                fnmatch.fnmatch(kf, 'K*' + str(self.keytag) + '.+*'): # delete all keyfiles or our keyfile
+                fnmatch.fnmatch(kf, 'K*' + str(self.keytag) + '.*'): # delete all keyfiles or our keyfile
                 if DEBUG: print('[Matched for deleting: %s]' % (kf))
                 try:
                     os.remove(path(kf))
-                    if DEBUG: print('[Deleted: %s]' % (kf))
+                    if opts.verbose: print('[Deleted: %s]' % (kf))
                 except:
                     (exc_type, exc_value, exc_traceback) = sys.exc_info()
                     print("?Can't delete keyfile, because %s" % (exc_value))
@@ -577,7 +550,7 @@ class SigningKey(object):
         if DEBUG: print('[set_delete_time() called]')
         self.mypath.cd()                        # change to zone directory
         try:
-             (rubbish, result) = str(shell('dnssec-settime   -D +' + str(KSK_I_D_INTERVAL) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
+             (rubbish, result) = str(shell('dnssec-settime   -D +' + str(conf.KSK_I_D_INTERVAL) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
         except script.CommandFailed:
              print('?Error from dnssec_settime while setting delete time of '  +keyFileName)
              e = AbortedZone("")
@@ -599,7 +572,7 @@ class SigningKey(object):
         if 'ds' in key_type:
             if self.zone.pcfg['Registrar'] != 'Local':       # DS maintained by registrar?
                 r = dns.resolver.Resolver()             # yes - do not bind resolver to our master
-                r.lifetime = NS_TIMEOUT
+                r.lifetime = conf.NS_TIMEOUT
                 r.use_edns(edns=0, ednsflags=0, payload=4096)
             try:
                 res = r.query(self.name, 'DS')
@@ -626,14 +599,20 @@ class SigningKey(object):
                    my_covers = dns.rdatatype.SOA    # others signed by ZSK
                 ##import pdb;pdb.set_trace()
                 rds = zone.find_rrset(self.name + '.', 'RRSIG', covers=my_covers)
+                if DEBUG: print('[zone.find.rrset:]'); import pprint; pp = pprint.PrettyPrinter(indent=4) ; pp.pprint(rds)
                 for rrsig_rdata in rds.items:
                     key_tag = rrsig_rdata.key_tag
                     if DEBUG: print('[test_if_included(key_type, secondKey) matching keytag: %s == %s]' % (key_tag, self.keytag))
                     if key_tag == self.keytag:
                         if DEBUG: print('[test_if_included(key_type, secondKey) RRSIG matched ourselves]')
                         return True                 # at least one RR signed by ourselves
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            except (dns.resolver.NoAnswer, KeyError): # KeyError if no RRSIGs exist
                 pass
+            except (dns.resolver.NXDOMAIN):
+                errmsg = "%s: RRSIG query returned domain %s none-existent" % (self.name,)
+                print('? ' + errmsg)
+                e = AbortedZone('? ' + errmsg)
+                raise e
             except (dns.exception.Timeout, IOError):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = "%s: RRSIG query network error: (Timeout or connection refused). %s, %s" % \
@@ -655,31 +634,33 @@ class SigningKey(object):
         myTime = 0
         if DEBUG: print('[test_if_time_reached(' + time_type + ') called]')
         if time_type == 'zsk2_prepub':
-            myTime = self.timingData['I'] - ZSK_I_D_INTERVAL * 3600 * 24   # ZSK_I_D_INTERVAL is pre publish interval
+                myTime = self.timingData['I'] - conf.ZSK_I_D_INTERVAL * 3600 * 24   # ZSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'zsk2_active':
-            myTime = self.timingData['I']                                  # ZSK1 inactive = ZSK2 active
+            myTime = self.timingData['I']                                           # ZSK1 inactive = ZSK2 active
         elif time_type == 'zsk1_delete':
-            myTime = self.timingData['D']                                  # ZSK1 delete time reached
+            myTime = self.timingData['D']                                           # ZSK1 delete time reached
         
         elif time_type == 'ds1_submit':                         # DS to be submitted prepublish interval after active
-            myTime = self.timingData['A'] + KSK_I_D_INTERVAL * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ksk2_prepub':
-            myTime = self.timingData['I'] - KSK_I_D_INTERVAL * 2 * 3600 * 24 # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 2 * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ds2_submit':                         # DS to be submitted prepublish interval after active
-            myTime = self.timingData['I'] - KSK_I_D_INTERVAL * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ksk1_inactive':
-            myTime = self.timingData['I']                                  # KSK1 inactive
+            myTime = self.timingData['I']                                           # KSK1 inactive
         elif time_type == 'ksk1_delete':
-            myTime = self.timingData['D']                                  # KSK1 to be deleted
+            myTime = self.timingData['D']                                           # KSK1 to be deleted
         elif time_type == 'ksk_delete':
-            myTime = self.timingData['D'] + KSK_I_D_INTERVAL * 3600 * 24   # prepub interval after DS retirement
+            myTime = self.timingData['D'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # prepub interval after DS retirement
         else:
             if __debug__:
                 raise AssertionError('?Internal error: test_if_time_reached called with wrong argument "%s"' % (time_type,))
             return False
         
-        if DEBUG: print('[test_if_time_reached: myTime=%s; current_timestamp=%s]' %(str(myTime), str(current_timestamp)))
-        if myTime <= current_timestamp:
+        now = int(time.time())
+        if DEBUG: print('[test_if_time_reached: myTime=%s; now=%s]' % (
+                        datetime.fromtimestamp(myTime).isoformat(), datetime.fromtimestamp(now).isoformat()))
+        if myTime <= now:
             return True
         return False 
     
@@ -751,7 +732,7 @@ class managedZone(object):
         self.parent = None
         self.parent_dir = None
         
-        self.mypath = path(ROOT_PATH + '/' + name)
+        self.mypath = path(conf.ROOT_PATH + '/' + name)
         self.mypath.cd()
         
         self.rmoteDSchanged = False
@@ -791,10 +772,12 @@ class managedZone(object):
             return cfg
                 
         def deleteKeyFiles():
-            for kf in self.mypath.list('*'):        # loop once per file in zone dir
+            self.mypath.cd()                    # change to zone directory
+            for kf in os.listdir():             # loop once per file in zone dir
                 if fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*'):
                     try:
-                        os.remove(path(kf))         # remove all key files if we do not have one created
+                        os.remove(path(kf))     # remove all key files if we did not complete zone creation
+                        if opts.verbose: print('[Deleted: %s]' % (kf))
                     except:
                         (exc_type, exc_value, exc_traceback) = sys.exc_info()
                         print("?Can't delete keyfile, because %s" % (exc_value))
@@ -819,7 +802,7 @@ class managedZone(object):
         # end of functions in managedZone.__init__
         #-----------------------------
         (x,y,self.parent) = self.name.partition('.')
-        pd = path(ROOT_PATH + '/' + self.parent)
+        pd = path(conf.ROOT_PATH + '/' + self.parent)
         if opts.debug: print('[Parent directory would be %s]' % (pd,))
         zl = ''
         if pd.exists:
@@ -966,7 +949,7 @@ class managedZone(object):
         nsec3 = False
         if self.pcfg['Method'] == 'NSEC3':
             nsec3 = True
-        k = (SigningKey(sender.type, self.name, sender.file_name, self, nsec3=nsec3, clone=True))
+        k = (SigningKey(sender.type, self.name, sender.file_name, self, nsec3=nsec3, cloneFromKeyInactiveAt=sender.inactiveTime()))
         if k.type == 'KSK':
              self.ksks.append(k)
         elif k.type == 'ZSK':
@@ -1037,22 +1020,15 @@ class managedZone(object):
 #   Main
 #--------------------------
 def main():
-    global DEBUG, current_timestamp
+    global DEBUG
     DEBUG = opts.debug
     
-    try:
-        current_timestamp = int(shell('date +%s', stdout='PIPE').stdout.strip())
-    except script.CommandFailed:
-        script.exit(1, '?Unable to obtain current timestamp' )
-    current_timestamp = ( current_timestamp // ( 3600 * 24 )) * 3600 * 24
-    if opts.debug: print('[Timestamp at 0:0 was %d]' % (current_timestamp,))
-        
-    root = path(ROOT_PATH)
+    root = path(conf.ROOT_PATH)
     if opts.debug: opts.verbose = True
     if not root.exists:
         print('%No key root directory; creating one.')
         root.mkdir(mode=0o750)
-        root = path(ROOT_PATH)
+        root = path(conf.ROOT_PATH)
     if opts.verbose: print('[scanning ' + root + ']')
     root.cd()
     root = path('.')
