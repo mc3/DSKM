@@ -157,6 +157,11 @@ def regRemoveAllDS(zone):
                 stat = getResult(cl['Tracking-Id'])
                 if 'request_state' in stat and stat['request_state'] == 'SUCCESS':
                     return stat
+                else:
+                    for c in stat:
+                        l.logDebug(c + ':   ' + str(stat[c]))
+                    l.logError('Unsuccesfull request state received.')
+                    return None
             else:
                 l.logError('Missing Tracking-Id in response from Joker while removing DS-RR of %s' % zone)
                 return None
@@ -194,6 +199,11 @@ def regAddDS(zone, args):
                     stat = getResult(cl['Tracking-Id'])
                     if 'request_state' in stat and stat['request_state'] == 'SUCCESS':
                         return stat
+                    else:
+                        for c in stat:
+                            l.logDebug(c + ':   ' + str(stat[c]))
+                        l.logError('Unsuccesfull request state received.')
+                        return None
                 else:
                     l.logError('Missing Tracking-Id in response from Joker while updating DS-RR for %s' % zone)
                     return None
@@ -221,6 +231,11 @@ def regAddDS(zone, args):
                     stat = getResult(cl['Tracking-Id'])
                     if 'request_state' in stat and stat['request_state'] == 'SUCCESS':
                         return stat
+                    else:
+                        for c in stat:
+                            l.logDebug(c + ':   ' + str(stat[c]))
+                        l.logError('Unsuccesfull request state received.')
+                        return None
                 else:
                     l.logError('Missing Tracking-Id in response from Joker while updating DS-RR for %s' % zone)
                     return None

@@ -283,7 +283,7 @@ class SigningKey(object):
         if task == 'read':
             self.file_name = file_name
             readKey(file_name)
-        elif task == 'ZSK':
+        elif task == 'ZSK':             # active when predecessor inactive
             inactive_from_now = conf.ZSK_P_A_INTERVAL + conf.ZSK_A_I_INTERVAL
             delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
             s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_ZSK) + ' -n ZONE ' \
@@ -309,22 +309,14 @@ class SigningKey(object):
             self.file_name = result + '.key'
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
-        elif task == 'KSK':
+        elif task == 'KSK':         # active now
             inactive_from_now = conf.KSK_P_A_INTERVAL + conf.KSK_A_I_INTERVAL
             delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
             s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
                 + '-A +' + repr(conf.KSK_P_A_INTERVAL) + 'd -I +' + repr(inactive_from_now) + 'd ' \
                 + '-D +' + repr(delete_from_now) + 'd -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
-            if cloneFromKeyInactiveAt != 0:
-                prepublishInterval = cloneFromKeyInactiveAt - int(time.time()) - 60  # publish  one minute from now (seconds)
-                if prepublishInterval > 0:      # did we wait too long? (new active > old inactive ?)
-                    inactive_from_now = conf.KSK_I_D_INTERVAL + conf.KSK_A_I_INTERVAL # prepublish + inactive - active
-                    delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
-                    s = conf.BIND_TOOLS + 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
-                    + repr(inactive_from_now) + 'd ' \
-                        + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
-                else:                           # yes
-                    print('%%Failed timely key rollover of %s before %s' % (file_name, datetime.fromtimestamp(cloneFromKeyInactiveAt).isoformat()))
+            if cloneFromKeyInactiveAt != 0 and cloneFromKeyInactiveAt < int(time.time()):
+                l.logWarn('Failed timely key rollover of %s before %s' % (file_name, datetime.fromtimestamp(cloneFromKeyInactiveAt).isoformat()))
             l.logDebug(s)
             try:
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -671,7 +663,7 @@ class SigningKey(object):
         elif time_type == 'ds1_submit':                         # DS to be submitted prepublish interval after active
             myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ksk1_followup':
-            myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 2 * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ds2_submit':                         # DS to be submitted prepublish interval after active
             myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ksk1_inactive':
@@ -709,15 +701,14 @@ class SigningKey(object):
             { 's': 'KSK1 created',      'c': test_if_included,      'ca': 'ksk1',                                        }, # 0
             { 's': 'KSK1 active',       'c': test_if_time_reached,  'ca': 'ds1_submit',  'a': submit_ds, 'aa': 'publish1'}, # 1
             { 's': 'DS1 submitted',     'c': test_if_included,      'ca': 'ds1',                                         }, # 2
-            { 's': 'DS1 published',     'c': test_if_time_reached,  'ca': 'ksk1_followup','a': create_a,  'aa': 'ksk'     }, # 3
-            { 's': 'KSK2 created',      'c': test_if_included,      'ca': 'ksk2',                                        }, # 4
-            { 's': 'KSK2 active',       'c': test_if_time_reached,  'ca': 'ds2_submit',  'a': submit_ds, 'aa': 'publish2'}, # 5
-            { 's': 'DS2 submitted',     'c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 6
-            { 's': 'DS2 published',     'c': test_if_excluded,      'ca': 'ds1',                                         }, # 7
-            { 's': 'DS1 retired',       'c': test_if_time_reached,  'ca': 'ksk1_inactive'                                }, # 8
-            { 's': 'KSK1 inactive',     'c': test_if_time_reached,  'ca': 'ksk1_delete', 'a': delete_a,  'aa': 'ksk'     }, # 9
-            { 's': 'KSK1 deleted',      'c': test_if_excluded,      'ca': 'ksk1',        'a': rename_a,  'aa': 'ksk', 'ns':1 },# 10
-            { 's': 'DS retire request submitted','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 11
+            { 's': 'DS1 published',     'c': test_if_time_reached,  'ca': 'ksk1_followup','a': create_a,  'aa': 'ksk'    }, # 3
+            { 's': 'KSK2 created',      'c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
+            { 's': 'KSK2 active',       'c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 5
+            { 's': 'DS2 published',     'c': test_if_excluded,      'ca': 'ds1',                                         }, # 6
+            { 's': 'DS1 retired',       'c': test_if_time_reached,  'ca': 'ksk1_inactive'                                }, # 7
+            { 's': 'KSK1 inactive',     'c': test_if_time_reached,  'ca': 'ksk1_delete', 'a': delete_a,  'aa': 'ksk'     }, # 8
+            { 's': 'KSK1 deleted',      'c': test_if_excluded,      'ca': 'ksk1',        'a': rename_a,  'aa': 'ksk', 'ns':1 },# 9
+            { 's': 'DS retire request submitted','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 10
             { 's': 'DS retired',        'c': test_if_time_reached,  'ca': 'ksk_delete',  'a': delete_a,  'aa': 'delete_all','ns':-1}
     )
 

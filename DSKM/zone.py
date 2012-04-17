@@ -288,7 +288,7 @@ class managedZone(object):
                 second = True
             
             if self.remoteDSchanged:
-                l.logDebug('About to call registrar . submitted_to_parent contains now: %s ' % (repr(self.pstat['submitted_to_parent'])))
+                l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))
 
                 if len(self.pstat['submitted_to_parent']) == 0: # removed all DS from remote parents
                     res = reg.regRemoveAllDS(self.name)
@@ -459,7 +459,7 @@ class managedZone(object):
             if self.pstat['ksk']['State'] < 2:
                 l.logError("Can't stop signing in state %s" % (self.pstat['ksk']['State']))
                 return 1
-            if self.pstat['ksk']['State'] > 10:
+            if self.pstat['ksk']['State'] > 9:
                 print("%%Termination of signing already in progress (state=%s)" % (self.pstat['ksk']['State']))
                 return 0
         secondKey = False
@@ -473,7 +473,7 @@ class managedZone(object):
         for k in self.zsks:
             k.set_delete_time(secondKey)
             secondKey = True
-        self.pstat['ksk']['State'] = 11
+        self.pstat['ksk']['State'] = 10
         if force:
             k = None
             if len(self.ksks) > 0:
