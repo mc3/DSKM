@@ -42,6 +42,11 @@ mailRelay = 'localhost'
 #--------------------------
 ROOT_PATH = '/var/named/master/signed'
 
+#------------------------------------------------------------------------------
+#   path to bind tools
+#--------------------------
+BIND_TOOLS = '/usr/local/sbin/'
+
 #--------------------------
 #   policy constants ( in days)
 #--------------------------

@@ -199,7 +199,7 @@ class SigningKey(object):
                     e = misc.AbortedZone("")
                     raise e
                 try:
-                    (rubbish, result) = str(shell('dnssec-settime   -u -p ' + type + ' ' + keyFileName, stdout='PIPE').stdout).split(None)
+                    (rubbish, result) = str(shell(conf.BIND_TOOLS + 'dnssec-settime   -u -p ' + type + ' ' + keyFileName, stdout='PIPE').stdout).split(None)
                 except script.CommandFailed:
                     l.logError('Error from dnssec_settime while reading timing data of '  +keyFileName)
                     e = misc.AbortedZone("")
@@ -286,7 +286,7 @@ class SigningKey(object):
         elif task == 'ZSK':
             inactive_from_now = conf.ZSK_P_A_INTERVAL + conf.ZSK_A_I_INTERVAL
             delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
-            s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_ZSK) + ' -n ZONE ' \
+            s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_ZSK) + ' -n ZONE ' \
                 + '-A +' + repr(conf.ZSK_P_A_INTERVAL) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
                 + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
             if cloneFromKeyInactiveAt != 0:
@@ -294,7 +294,7 @@ class SigningKey(object):
                 if prepublishInterval > 0:      # did we wait too long? (new active > old inactive ?)
                     inactive_from_now = conf.ZSK_I_D_INTERVAL + conf.ZSK_A_I_INTERVAL # prepublish + inactive - active
                     delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
-                    s = 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
+                    s = conf.BIND_TOOLS + 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
                     + repr(inactive_from_now) + 'd ' \
                         + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
                 else:                           # yes
@@ -312,7 +312,7 @@ class SigningKey(object):
         elif task == 'KSK':
             inactive_from_now = conf.KSK_P_A_INTERVAL + conf.KSK_A_I_INTERVAL
             delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
-            s = 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
+            s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
                 + '-A +' + repr(conf.KSK_P_A_INTERVAL) + 'd -I +' + repr(inactive_from_now) + 'd ' \
                 + '-D +' + repr(delete_from_now) + 'd -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
             if cloneFromKeyInactiveAt != 0:
@@ -320,7 +320,7 @@ class SigningKey(object):
                 if prepublishInterval > 0:      # did we wait too long? (new active > old inactive ?)
                     inactive_from_now = conf.KSK_I_D_INTERVAL + conf.KSK_A_I_INTERVAL # prepublish + inactive - active
                     delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
-                    s = 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
+                    s = conf.BIND_TOOLS + 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
                     + repr(inactive_from_now) + 'd ' \
                         + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
                 else:                           # yes
@@ -355,7 +355,7 @@ class SigningKey(object):
     def digestOfDS(self):
         def read1DS(i):
             digest = ''
-            s = str('dnssec-dsfromkey -%d %s' % (i, self.file_name))
+            s = str(conf.BIND_TOOLS + 'dnssec-dsfromkey -%d %s' % (i, self.file_name))
             try:                                      
                 result = shell(s, stdout='PIPE').stdout.strip()
                 l.logDebug('digestOfDS(): dnssec-dsfromkey returned: "%s"' % (result,))
@@ -402,7 +402,7 @@ class SigningKey(object):
         
         if activity != 'retire' and activity != 'delete':
             l.logVerbose('Creating DS-RR from KSK %s' % self.__str__())
-            s = 'dnssec-dsfromkey ' + self.file_name
+            s = conf.BIND_TOOLS + 'dnssec-dsfromkey ' + self.file_name
             l.logDebug(s)                   
             try:                                      
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -565,7 +565,7 @@ class SigningKey(object):
         l.logDebug('set_delete_time() called')
         self.mypath.cd()                        # change to zone directory
         try:
-             (rubbish, result) = str(shell('dnssec-settime   -D +' + str(conf.KSK_I_D_INTERVAL) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
+             (rubbish, result) = str(shell(conf.BIND_TOOLS + 'dnssec-settime   -D +' + str(conf.KSK_I_D_INTERVAL) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
         except script.CommandFailed:
              l.logError('Error from dnssec_settime while setting delete time of '  +keyFileName)
              e = misc.AbortedZone("")
@@ -621,12 +621,12 @@ class SigningKey(object):
                 ##import pdb;pdb.set_trace()
                 rds = zone.find_rrset(self.name + '.', 'RRSIG', covers=my_covers)
                 
-                if False:								# need to leard how redirect pprint to string
-                	dbgmsg1 = 'zone.find.rrset:\n'
-                	dbgmsg2 = ''
-                	pp = pprint.PrettyPrinter(indent=4,stream=dbgmsg2)
-                	pp.pprint(rds)
-                	l.logDebug(dbgmsg1 + dbgmsg2)
+                if False:                               # need to leard how redirect pprint to string
+                    dbgmsg1 = 'zone.find.rrset:\n'
+                    dbgmsg2 = ''
+                    pp = pprint.PrettyPrinter(indent=4,stream=dbgmsg2)
+                    pp.pprint(rds)
+                    l.logDebug(dbgmsg1 + dbgmsg2)
                 
                 for rrsig_rdata in rds.items:
                     key_tag = rrsig_rdata.key_tag
@@ -673,7 +673,7 @@ class SigningKey(object):
         elif time_type == 'ksk1_followup':
             myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 2 * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ds2_submit':                         # DS to be submitted prepublish interval after active
-            myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
         elif time_type == 'ksk1_inactive':
             myTime = self.timingData['I']                                           # KSK1 inactive
         elif time_type == 'ksk1_delete':

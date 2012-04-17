@@ -250,7 +250,7 @@ def getResult(transactionID):
         l.logVerbose('Retrieving completion status from Joker...')
         time.sleep(15)
         stat = requestJoker('result-retrieve?SvTrID=%s' % transactionID)
-    stat[TID] = transactionID
+    stat['TID'] = transactionID
     return stat        
 
 def printStatus(stat, show):

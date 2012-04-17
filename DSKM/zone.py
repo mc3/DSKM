@@ -52,8 +52,8 @@ import json
 import os
 
 import re
+import socket
 
-import pprint
 
 # -----------------------------------------
 
@@ -366,7 +366,9 @@ class managedZone(object):
     def UpdateRemoteDS(self, activity, keytag):
         l.logDebug('UpdateRemoteDS called. submitted_to_parent contains: %s ' % (repr(self.pstat['submitted_to_parent'])))
         if activity == 'retire':
-            self.pstat['submitted_to_parent'].remove(keytag)
+        	for k in self.pstat['submitted_to_parent']:
+        		if k != keytag:
+        			self.pstat['submitted_to_parent'].remove(k)
         elif activity == 'delete':
             self.pstat['submitted_to_parent'] = []
         elif 'publish' in activity:
