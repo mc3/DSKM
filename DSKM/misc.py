@@ -31,6 +31,14 @@
  POSSIBILITY OF SUCH DAMAGE.
 """
 
+import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY.DNSKEY, dns.rcode
+import dns.dnssec, dns.zone
+
+import DSKM.conf as conf
+
+auth_NS = {}
+auth_resolver = {}
+
 #--------------------------
 #   classes
 #--------------------------
@@ -43,3 +51,46 @@ class AbortedZone(Exception):
 class CompletedZone(Exception):
     pass
     
+
+
+#--------------------------
+#   functions
+#--------------------------
+
+def doQuery(theQuery, theRRtype):
+    try:
+        answer = dns.resolver.query(theQuery, theRRtype)
+        return answer
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.exception.Timeout, KeyError):
+        return None
+
+def authNS(theZone):
+	global auth_NS
+	
+	if theZone in auth_NS:
+		return auth_NS[theZone]
+	
+	nslist = []
+	n = dns.name.Name((theZone, ''))
+	a1 = doQuery(n, 'NS')
+	if a1:
+	    for ns in a1:
+	        a2 = doQuery(ns.target, 'A')
+	        if a2:
+	            nslist.append(a2[0].address)
+	        a2 = doQuery(ns.target, 'AAAA')
+	        if a2:
+	            nslist.append(a2[0].address)
+	auth_NS[theZone] = nslist
+	return nslist
+
+def authResolver(theZone):
+	global auth_resolver
+	if theZone in auth_resolver:
+		return auth_resolver[theZone]
+	my_resolver = dns.resolver.Resolver()
+	my_resolver.lifetime = conf.NS_TIMEOUT
+	my_resolver.nameservers = authNS(theZone)
+	my_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
+	auth_resolver[theZone] = my_resolver
+	return my_resolver

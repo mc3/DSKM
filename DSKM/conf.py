@@ -107,7 +107,7 @@ E-mail: kob6558@gmail.com
 KEY_ALGO_NSEC = 'RSASHA256'
 KEY_ALGO_NSEC3 = 'NSEC3RSASHA1'
 
-## use both: DIGEST_ALGO_DS = '-2'          # SHA-256
+DIGEST_ALGO_DS = '-2'          # '-1': SHA1, '-2': SHA-256, '': SHA1 + SHA256
 
 KEY_SIZE_KSK = 2048
 KEY_SIZE_ZSK = 1024

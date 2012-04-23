@@ -578,9 +578,7 @@ class SigningKey(object):
         r = master_resolver
         if 'ds' in key_type:
             if self.zone.pcfg['Registrar'] != 'Local':  # DS maintained by registrar?
-                r = dns.resolver.Resolver()             # yes - do not bind resolver to our master
-                r.lifetime = conf.NS_TIMEOUT
-                r.use_edns(edns=0, ednsflags=0, payload=4096)
+                r = misc.authResolver(self.zone.parent) # yes - use resolver bound to their auth NS
             elif not self.zone.parent_dir:              # locally maintained - do we have a parent?
                 return True                             # no - no parent: no DS - state test always succeeds
             try:
@@ -602,6 +600,7 @@ class SigningKey(object):
             return False
         else:                                           # testing for signed DNSKEY or SOA 
             try:
+                s = None
                 if self.zone.pcfg['Registrar'] == 'Local':  # zone maintained local?
                     s = conf.master[0]
                 else:

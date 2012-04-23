@@ -403,7 +403,7 @@ class managedZone(object):
     def validate(self):                     # validate zone
         global ext_recursive_resolver
          
-        if self.pstat['ksk']['State'] < 3 or self.pstat['ksk']['State'] > 10 or self.pcfg['Registrar'] == 'Local':
+        if self.pstat['ksk']['State'] < 3 or self.pstat['ksk']['State'] > 9 or self.pcfg['Registrar'] == 'Local':
             return True
         
         l.logVerbose('Validating %s...' % (self.name))
