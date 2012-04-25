@@ -291,7 +291,7 @@ class managedZone(object):
                 l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))
 
                 if len(self.pstat['submitted_to_parent']) == 0: # removed all DS from remote parents
-                    res = reg.regRemoveAllDS(self.name)
+                    res = reg.regRemoveAllDS(self)
                     if not res:
                         l.logError("Failed to delete all DS-RR of %s at registrar %s" % (self.name, self.pcfg['Registrar']))
                         e = misc.AbortedZone()
@@ -306,27 +306,30 @@ class managedZone(object):
                     for tag in self.pstat['submitted_to_parent']:
                         for key in self.ksks:
                             if key.keytag == tag:
-                                arg = {}
-                                arg['tag'] = tag
-                                arg['alg'] = key.dnssec_alg
-                                arg['digest_type'] = 1
-                                arg['digest'] = key.dsHash[0]
-                                arg['flags'] = key.dnssec_flags
-                                arg['pubkey'] = key.pubkey_base64
-                                args.append(arg)
+                                if conf.DIGEST_ALGO_DS == '' or conf.DIGEST_ALGO_DS == '-1':
+                                    arg = {}
+                                    arg['tag'] = tag
+                                    arg['alg'] = key.dnssec_alg
+                                    arg['digest_type'] = 1
+                                    arg['digest'] = key.dsHash[0]
+                                    if conf.DIGEST_ALGO_DS == '-1':
+                                        arg['flags'] = key.dnssec_flags
+                                        arg['pubkey'] = key.pubkey_base64
+                                    args.append(arg)
                                 
-                                arg = {}
-                                arg['tag'] = tag
-                                arg['alg'] = key.dnssec_alg
-                                arg['digest_type'] = 2
-                                arg['digest'] = key.dsHash[1]
-                                arg['flags'] = key.dnssec_flags
-                                arg['pubkey'] = key.pubkey_base64
-                                args.append(arg)
+                                if conf.DIGEST_ALGO_DS == '' or conf.DIGEST_ALGO_DS == '-2':
+                                    arg = {}
+                                    arg['tag'] = tag
+                                    arg['alg'] = key.dnssec_alg
+                                    arg['digest_type'] = 2
+                                    arg['digest'] = key.dsHash[1]
+                                    arg['flags'] = key.dnssec_flags
+                                    arg['pubkey'] = key.pubkey_base64
+                                    args.append(arg)
                                 
                                 break
                     if len(args) > 0:
-                        res = reg.regAddDS(self.name, args)
+                        res = reg.regAddDS(self, args)
                         if not res:
                             l.logError("Failed to update DS-RRs for keys %s of %s at registrar %s" % (
                                 repr(self.pstat['submitted_to_parent']), self.name, self.pcfg['Registrar']))
@@ -366,9 +369,9 @@ class managedZone(object):
     def UpdateRemoteDS(self, activity, keytag):
         l.logDebug('UpdateRemoteDS called. submitted_to_parent contains: %s ' % (repr(self.pstat['submitted_to_parent'])))
         if activity == 'retire':
-        	for k in self.pstat['submitted_to_parent']:
-        		if k != keytag:
-        			self.pstat['submitted_to_parent'].remove(k)
+            for k in self.pstat['submitted_to_parent']:
+                if k != keytag:
+                    self.pstat['submitted_to_parent'].remove(k)
         elif activity == 'delete':
             self.pstat['submitted_to_parent'] = []
         elif 'publish' in activity:
@@ -403,7 +406,7 @@ class managedZone(object):
     def validate(self):                     # validate zone
         global ext_recursive_resolver
          
-        if self.pstat['ksk']['State'] < 3 or self.pstat['ksk']['State'] > 9 or self.pcfg['Registrar'] == 'Local':
+        if self.pstat['ksk']['State'] < 3 or self.pstat['ksk']['State'] > dnsKey.SigningKey.ksk_state_max or self.pcfg['Registrar'] == 'Local':
             return True
         
         l.logVerbose('Validating %s...' % (self.name))
@@ -459,7 +462,7 @@ class managedZone(object):
             if self.pstat['ksk']['State'] < 2:
                 l.logError("Can't stop signing in state %s" % (self.pstat['ksk']['State']))
                 return 1
-            if self.pstat['ksk']['State'] > 9:
+            if self.pstat['ksk']['State'] > dnsKey.SigningKey.ksk_state_max:
                 print("%%Termination of signing already in progress (state=%s)" % (self.pstat['ksk']['State']))
                 return 0
         secondKey = False
@@ -473,7 +476,7 @@ class managedZone(object):
         for k in self.zsks:
             k.set_delete_time(secondKey)
             secondKey = True
-        self.pstat['ksk']['State'] = 10
+        self.pstat['ksk']['State'] = dnsKey.SigningKey.ksk_state_max + 1
         if force:
             k = None
             if len(self.ksks) > 0:
@@ -484,5 +487,21 @@ class managedZone(object):
                 k.delete_a('delete_all', False)
                 k.updateSOA(k.mypath + '/' + self.name + '.zone')
         self.saveCfgOrState('state')
+        if self.remoteDSchanged:
+            l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))
+            res = reg.regRemoveAllDS(self)
+            if not res:
+                l.logError("Failed to delete all DS-RR of %s at registrar %s" % (self.name, self.pcfg['Registrar']))
+                e = misc.AbortedZone()
+                raise e
+            l.logVerbose("DS-RRs of %s at registrar %s deleted" % (
+                    self.name, self.pcfg['Registrar']))
+            for c in res.keys():
+                if c in ('Proc-ID', 'Tracking-Id'):
+                    print(c + ':   ' + res[c])
         return 0         
-
+"""
+r = misc.authResolver('2.0.0.0.0.4.d.0.2.0.a.2.ip6.arpa')
+for ns in r.nameservers:
+    print(ns)
+"""

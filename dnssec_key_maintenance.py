@@ -176,20 +176,19 @@ def main():
             try:
                 z = zone.managedZone(zone_name)
                 res1 = z.stopSigning(opts.force)
-                res2 = reg.regRemoveAllDS(zone_name)
                 print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop"]')
                 print('[...repeat until no DNSKEYs and RRSIGs remain in zone]')
                 return res1 and res2
             except misc.AbortedZone:
                 print('?Failed to stop signing of zone ' + zone_name)
                 return 1
-            except CompletedZone:
+            except misc.CompletedZone:
                 print('%%Unsigned zone ' + zone_name)
                 return 0
             pass
         else:
             print('?%s not a managed zone.' % opts.stopSigningOfZone)
-            return 1
+        return 1
     
     l.logDebug('[ Doing zones: ]')
     l.logDebug( zone_dirs )

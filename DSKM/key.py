@@ -147,6 +147,8 @@ secondary_resolver.lifetime = conf.NS_TIMEOUT
 secondary_resolver.nameservers = conf.external_secondaries
 secondary_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
 
+
+
 #--------------------------
 #   classes
 #--------------------------
@@ -394,7 +396,7 @@ class SigningKey(object):
         
         if activity != 'retire' and activity != 'delete':
             l.logVerbose('Creating DS-RR from KSK %s' % self.__str__())
-            s = conf.BIND_TOOLS + 'dnssec-dsfromkey ' + self.file_name
+            s = conf.BIND_TOOLS + 'dnssec-dsfromkey ' + conf.DIGEST_ALGO_DS + ' ' + self.file_name
             l.logDebug(s)                   
             try:                                      
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -416,7 +418,10 @@ class SigningKey(object):
                 with open(ds_file_name, 'r', encoding="ASCII") as fd:
                     if activity == 'retire':
                         lines = fd.readlines()
-                        old = ''.join(lines[2:])
+                        n = 1
+                        if conf.DIGEST_ALGO_DS == '':   # 2 DS-RR (SHA1 + SHA256)?
+                            n = 2
+                        old = ''.join(lines[n:])
                     elif activity == 'delete':
                         pass
                     else:
@@ -581,9 +586,11 @@ class SigningKey(object):
                 r = misc.authResolver(self.zone.parent) # yes - use resolver bound to their auth NS
             elif not self.zone.parent_dir:              # locally maintained - do we have a parent?
                 return True                             # no - no parent: no DS - state test always succeeds
+            l.logDebug('test_if_included(): List of auth NS to query: %s' % (repr(r.nameservers)))
             try:
                 res = r.query(self.name, 'DS')
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+                l.logDebug('test_if_included() got NoAnswer or NXDOMAIN')
                 pass
             except (dns.exception.Timeout):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
@@ -595,7 +602,9 @@ class SigningKey(object):
             else:
                 for ds in res.rrset.items:
                     keytag = ds.key_tag
+                    l.logDebug('test_if_included("ds", secondKey) matching keytag: %s == %s' % (keytag, self.keytag))
                     if keytag == self.keytag:
+                        l.logDebug('test_if_included("ds", secondKey) RRSIG matched ourselves')
                         return True
             return False
         else:                                           # testing for signed DNSKEY or SOA 
@@ -689,12 +698,12 @@ class SigningKey(object):
     #          s = state                 c = check cond. for transition, ca = argument for c, a = action aa=arg  ns = next state
     ZSTT = (
             { 's': 'ZSK1 created',      'c': test_if_included,      'ca': 'zsk1',                                        },
-            { 's': 'ZSK1 active',       'c': test_if_time_reached,  'ca': 'zsk1_followup','a': create_a,  'aa': 'zsk'     },
+            { 's': 'ZSK1 active',       'c': test_if_time_reached,  'ca': 'zsk1_followup','a': create_a,  'aa': 'zsk'    },
             { 's': 'ZSK2 created',      'c': test_if_included,      'ca': 'zsk2',                                        },
-            { 's': 'ZSK2 published',    'c': test_if_time_reached,  'ca': 'zsk1_inactive',                               },
-            { 's': 'ZSK2 active',       'c': test_if_time_reached,  'ca': 'zsk1_delete', 'a': delete_a,  'aa': 'zsk'     },
-            { 's': 'ZSK1 deleted',      'c': test_if_excluded,      'ca': 'zsk1',        'a': rename_a,  'aa': 'zsk', 'ns': 1},
+            { 's': 'ZSK2 active',       'c': test_if_excluded,      'ca': 'zsk1',                                        },
+            { 's': 'ZSK1 inactive',     'c': test_if_time_reached,  'ca': 'zsk1_delete', 'a': delete_a,  'aa': 'zsk', 'ns': 1,}
     )
+    zsk_state_max = 4
     
     KSTT = (
             { 's': 'KSK1 created',      'c': test_if_included,      'ca': 'ksk1',                                        }, # 0
@@ -704,13 +713,12 @@ class SigningKey(object):
             { 's': 'KSK2 created',      'c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
             { 's': 'KSK2 active',       'c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 5
             { 's': 'DS2 published',     'c': test_if_excluded,      'ca': 'ds1',                                         }, # 6
-            { 's': 'DS1 retired',       'c': test_if_time_reached,  'ca': 'ksk1_inactive'                                }, # 7
-            { 's': 'KSK1 inactive',     'c': test_if_time_reached,  'ca': 'ksk1_delete', 'a': delete_a,  'aa': 'ksk'     }, # 8
-            { 's': 'KSK1 deleted',      'c': test_if_excluded,      'ca': 'ksk1',        'a': rename_a,  'aa': 'ksk', 'ns':1 },# 9
-            { 's': 'DS retire request submitted','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 10
+            { 's': 'DS1 retired',       'c': test_if_excluded,      'ca': 'ksk1'                                         }, # 7
+            { 's': 'KSK1 inactive',     'c': test_if_time_reached,  'ca': 'ksk1_delete', 'a': delete_a,  'aa': 'ksk', 'ns':3}, # 8
+            { 's': 'DS retire request submitted','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 9
             { 's': 'DS retired',        'c': test_if_time_reached,  'ca': 'ksk_delete',  'a': delete_a,  'aa': 'delete_all','ns':-1}
     )
-
+    ksk_state_max = 8
 
     
     #-----------------------------

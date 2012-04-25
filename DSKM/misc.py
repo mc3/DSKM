@@ -34,7 +34,16 @@
 import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY.DNSKEY, dns.rcode
 import dns.dnssec, dns.zone
 
+import sys
+
 import DSKM.conf as conf
+import DSKM.key
+
+import DSKM.logger as logger
+l = logger.Logger()
+
+
+#--------------------------
 
 auth_NS = {}
 auth_resolver = {}
@@ -59,38 +68,53 @@ class CompletedZone(Exception):
 
 def doQuery(theQuery, theRRtype):
     try:
-        answer = dns.resolver.query(theQuery, theRRtype)
+        answer = DSKM.key.master_resolver.query(theQuery, theRRtype)
         return answer
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.exception.Timeout, KeyError):
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, KeyError):
+        (exc_type, exc_value, exc_traceback) = sys.exc_info()
+        l.logDebug('doQuery(): Query: %s failed with %s' % (theQuery, exc_type))
         return None
+    except (dns.exception.Timeout):
+        l.logError('Failed to query %s of zone %s' % (theRRtype, repr(theQuery)))
+        raise
 
 def authNS(theZone):
-	global auth_NS
-	
-	if theZone in auth_NS:
-		return auth_NS[theZone]
-	
-	nslist = []
-	n = dns.name.Name((theZone, ''))
-	a1 = doQuery(n, 'NS')
-	if a1:
-	    for ns in a1:
-	        a2 = doQuery(ns.target, 'A')
-	        if a2:
-	            nslist.append(a2[0].address)
-	        a2 = doQuery(ns.target, 'AAAA')
-	        if a2:
-	            nslist.append(a2[0].address)
-	auth_NS[theZone] = nslist
-	return nslist
+    global auth_NS
+    
+    if theZone in auth_NS:
+        return auth_NS[theZone]
+    
+    nslist = []
+    ll = theZone.split('.')
+    ll.append('')
+    a1 = None
+    while len(ll) > 1:
+    	n = dns.name.Name(ll)
+    	a1 = doQuery(n, 'NS')
+    	if a1:
+    		break
+    	del(ll[0])
+    if a1:
+        for ns in a1:
+            a2 = doQuery(ns.target, 'A')
+            if a2:
+                nslist.append(a2[0].address)
+            a2 = doQuery(ns.target, 'AAAA')
+            if a2:
+                nslist.append(a2[0].address)
+        auth_NS[theZone] = nslist
+        return nslist
+    l.logWarn("Unable to find NS of zone %s (or it's parent" % (repr(theQuery)))
+    e = AbortedZone("")
+    raise e
 
 def authResolver(theZone):
-	global auth_resolver
-	if theZone in auth_resolver:
-		return auth_resolver[theZone]
-	my_resolver = dns.resolver.Resolver()
-	my_resolver.lifetime = conf.NS_TIMEOUT
-	my_resolver.nameservers = authNS(theZone)
-	my_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
-	auth_resolver[theZone] = my_resolver
-	return my_resolver
+    global auth_resolver
+    if theZone in auth_resolver:
+        return auth_resolver[theZone]
+    my_resolver = dns.resolver.Resolver()
+    my_resolver.lifetime = conf.NS_TIMEOUT
+    my_resolver.nameservers = authNS(theZone)
+    my_resolver.use_edns(edns=0, ednsflags=0, payload=4096)
+    auth_resolver[theZone] = my_resolver
+    return my_resolver
