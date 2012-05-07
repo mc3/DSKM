@@ -33,12 +33,13 @@
  POSSIBILITY OF SUCH DAMAGE.
 """
 # -----------------------------------------
-import  xml.etree.ElementTree as etree
+from datetime import date, datetime
 import http.client
 import pprint
 import ssl
 import time
 import urllib.parse
+import xml.etree.ElementTree as etree
 
 import sys
 # -----------------------------------------
@@ -48,6 +49,12 @@ import sys
 # -----------------------------------------
 theConnection = None
 theSecureConnection = None
+
+newChangedValue = ''
+updatedToday = False
+
+newDSrdata = set()
+
 # -----------------------------------------
 
 import DSKM.logger as logger
@@ -112,79 +119,14 @@ class SecureConnectionRipe():
 # -----------------------------------------
 # Functions
 # -----------------------------------------
-def regRemoveAllDS(zone):
+def regRemoveAllDS(zone_name):
 
-    ele = None
-    
-    if zone.split('.')[-1] not in 'arpa':
-        l.logError('Internal inconsitency: regRemoveAllDS(): Zone not supported by Ripe: "%s"' % (zone))
-        return None
-        
-    b = """<whois-modify>\r
-    <remove attribute-type="ds-rdata"/>\r
-</whois-modify>\r
-"""
-    h = {}
-    h['Content-Type'] = 'application/xml'
-    
-    try:
-        ele = request('POST', 'modify/ripe/domain/' + zone, body=b, headers=h)
-    except:
-        l.logError('Request remove all DS-RR of zone %s to Ripe failed' % (zone))
-        raise
-        return None
-    logDomainAttributes(ele)
-    d = domainAttributes(ele)
-    if d and 'ds-rdata' not in d:   # all DS-RR deleted
-        return d
-    l.logError('Request remove all DS-RR of zone %s to Ripe returned still at least one ds-rdata or something else went wrong' % (zone))
-    return None
-    
+    return makeRequest(zone_name, ())
 
+def regAddDS(zone_name, args):
 
-def regAddDS(zone, args):
+    return makeRequest(zone_name, args)
 
-    ele = None
-    
-    if zone.split('.')[-1] not in 'arpa':
-        l.logError('Internal inconsitency: regRemoveAllDS(): Zone not supported by Ripe: "%s"' % (zone))
-        return None
-        
-    if not regRemoveAllDS(zone):		# remove any existing DS
-    	return None
-    
-    b = """
-<whois-modify>
-    <add>
-        <attributes>
-    """
-    for arg in args:
-        if (None, '') in (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])):
-            l.logError('Internal inconsitency: regAddDS(): at least one argument of key %d is empty: "%d","%d","%s"'
-                % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])))
-            return None
-        b = b + str('	    <attribute name="ds-rdata" value="%d %d %d %s"/>\n' %
-            (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])))
-    b = b + """
-        </attributes>   
-    </add>
-</whois-modify>
-"""
-    h = {}
-    h['Content-Type'] = 'application/xml'
-    
-    try:
-        ele = request('POST', 'modify/ripe/domain/' + zone, body=b, headers=h)
-    except:
-        l.logError('Request update all DS-RR of zone %s to Ripe failed' % (zone))
-        raise
-        return None
-    logDomainAttributes(ele)
-    d = domainAttributes(ele)
-    if d and 'ds-rdata' in d and d['ds-rdata'] == len(args):   # one DS-RR per item in args required
-        return d
-    l.logError('Request update DS-RR of zone %s to Ripe returned unexpected number of ds-rdata' % (zone))
-    return None
 
 def getResultList(rid):
     # no result list with Ripe
@@ -194,42 +136,146 @@ def getResultList(rid):
 # Internal functions
 # -----------------------------------------
 
-def query(url):
+def dbQuery(url):
     
     c = ConnectionRipe().conn
     
     u = '/whois/' + url
-    print('[Requesting.]')
+    ##print('[Requesting.]')
     c.request('GET', u)
     
     with c.getresponse() as r1:
         if r1.status != 200:
-            print('Query of RIPE.NET whois DB server failed , because: ' + r1.reason + ' - HTTP - status ' + repr(r1.status))
+            print('Query of RIPE.NET whois DB server failed , because: ' + r1.reason + ' - HTTP - status' + repr(r1.status))
             return None
         t = etree.fromstring(r1.read())
         return t
     return 
 
-def request(method, url, body=None, headers={}):
+def dbRequest(method, url, body=None, headers={}):
     
     c = SecureConnectionRipe().conn
     
     u = '/whois/' + url + '?password=' + conf.registrar['Ripe']['account_pw']
-    ##print('[Requesting.]')
+    l.logDebug('dbRequest(,body,,): %s' % (body))
     c.request(method, u, body, headers)
     
     with c.getresponse() as r1:
         if r1.status != 200:
+            for line in r1.read().decode('ASCII').splitlines():
+                l.logDebug(line)
             print('Request to RIPE.NET whois DB server failed , because: ' + r1.reason + ' - HTTP - status ' + repr(r1.status))
             return None
         t = etree.fromstring(r1.read())
         return t
     return 
 
-def domainAttributes(ele):      #return a dict with attribute names as keys and number of occurences as values
-    if ele == None:
-        return
-    d = {}              		# result dict
+def makeRequest(zone_name, args):   # construct and perform the request from Ripe
+    global updatedToday
+    ele = None
+    addChanged = False
+    
+    if zone_name.split('.')[-1] not in 'arpa':
+        l.logError('Internal inconsitency: Zone not supported by Ripe: "%s"' % (zone_name))
+        return None
+
+    changedTimestamp()              # sets up value of 'changed' attribute
+    try:
+        ele = dbQuery('lookup/ripe/domain/' + zone_name) # query current config
+    except:
+        l.logError('Request query DS-RR of zone %s at Ripe failed' % (zone_name))
+        return None
+    logDomainAttributes(ele)
+    os = domainAttributeSet(ele)    # old (existing) set of ds-rdata
+    ns = set()                      # new set of ds-rdata
+    b = ''                          # request body
+
+    for arg in args:
+        if (None, '') in (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])):
+            l.logError('Internal inconsitency: regAddDS(): at least one argument of key %d is empty: "%d","%d","%s"'
+                % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])))
+            return None
+        ns.add(str('%d %d %d %s' % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest']))))
+        
+    if ns == os:
+        l.logWarn('No changes needed at registrar Ripe')
+        return {'TID': ''}
+    if ns > os:
+        b =  makeAppend(ns - os)
+    else:
+        if ns == set():
+            b =  makeRemove()
+            addChanged = True
+        else:
+            b =  makeReplace(ns)
+            addChanged = True
+    h = {}
+    h['Content-Type'] = 'application/xml'
+    ele = dbRequest('POST', 'modify/ripe/domain/' + zone_name, body=b, headers=h)
+    if ele is None:
+        l.logError('Request update DS-RR of zone %s to Ripe failed' % (zone_name))
+        return None
+    logDomainAttributes(ele)
+    ts = domainAttributeSet(ele)
+    if ns != ts:
+        l.logError('DS-RR of zone %s returned from Ripe differ from request' % (zone_name))
+        return None
+    if addChanged and not updatedToday:
+        b = makeAppend(set())
+        h = {}
+        h['Content-Type'] = 'application/xml'
+        ele = dbRequest('POST', 'modify/ripe/domain/' + zone_name, body=b, headers=h)
+        if ele is None:
+            l.logWarn('Could not add "changed" attribute')
+        logDomainAttributes(ele)
+    return {'TID': newChangedValue}
+    
+def makeAppend(setOfDS_rdata):
+    global updatedToday
+
+    r = """
+<whois-modify>
+    <add>
+        <attributes>"""
+    for d in setOfDS_rdata:
+        r = r + str('               <attribute name="ds-rdata" value="%s"/>\n' % (d))
+    if not updatedToday:
+        r = r + str('               <attribute name="changed" value="%s"/>\n' % (newChangedValue))
+    r = r + """
+        </attributes>
+    </add>
+</whois-modify>"""
+    return r
+
+    
+def makeRemove():
+    r = """
+<whois-modify>
+    <remove attribute-type="ds-rdata"/>
+</whois-modify>"""
+    return r
+        
+
+def makeReplace(setOfDS_rdata):
+    r = """
+<whois-modify>
+    <replace attribute-type="ds-rdata">
+        <attributes>"""
+    for d in setOfDS_rdata:
+        r = r + str('               <attribute name="ds-rdata" value="%s"/>\n' % (d))
+    r = r + """
+        </attributes>
+    </replace>
+</whois-modify>"""
+    return r
+
+
+def domainAttributeSet(ele):        # return a set with values of attributes 'ds-rdata' and 
+                                    # and set global updatedToday, which is True, if changed today
+    global updatedToday
+    updatedToday = False
+    s = set()                       # result set
+    
     oe = ele.findall("objects/object/attributes/*")
     for o in oe:
         name = None
@@ -239,11 +285,11 @@ def domainAttributes(ele):      #return a dict with attribute names as keys and 
                 name = v
             if k == 'value':
                 value = v
-                if name in d:
-                    d[name] = d[name] +1
-                else:
-                    d[name] = 1
-    return d
+                if name == 'ds-rdata':
+                    s.add(value)
+                elif name == 'changed' and value == newChangedValue:
+                    updatedToday = True
+    return s
 
 def logDomainAttributes(ele):
     if ele == None:
@@ -258,4 +304,10 @@ def logDomainAttributes(ele):
             if k == 'value':
                 value = v
                 l.logDebug(str('  %s:\t%s' % (name, value)))
+
+def changedTimestamp():
+    global newChangedValue
+    timestamp = datetime.now()
+    newChangedValue = str('%s %s' % (conf.registrar['Ripe']['changed_email'], timestamp.strftime('%Y%m%d')))
+    return
 

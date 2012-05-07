@@ -423,7 +423,6 @@ class managedZone(object):
                     response = dns.query.udp(request, nameserver, conf.NS_TIMEOUT)
                     if response.flags & dns.flags.TC:
                         # Response truncated; retry with TCP.
-                        timeout = self._compute_timeout(start)
                         response = dns.query.tcp(request, nameserver, conf.NS_TIMEOUT)
 
                 except (socket.error, dns.exception.Timeout, dns.query.UnexpectedSource, dns.exception.FormError, EOFError):
