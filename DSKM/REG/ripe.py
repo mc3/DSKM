@@ -88,7 +88,7 @@ class ConnectionRipe():
         
         ConnectionRipe.conn = http.client.HTTPConnection(conf.registrar['Ripe']['server'])
         ##ConnectionRipe.conn.set_debuglevel(1)
-        ##print('[Connected.]')
+        l.logDebug('Connected.')
         
     def conn(self):
         return ConnectionRipe.conn
@@ -111,7 +111,7 @@ class SecureConnectionRipe():
         context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
         SecureConnectionRipe.conn = http.client.HTTPSConnection(conf.registrar['Ripe']['server'], context = context)
         ##SecureConnectionRipe.conn.set_debuglevel(10)
-        ##print('[Securely connected.]')
+        l.logDebug('Securely connected.')
         
     def conn(self):
         return SecureConnectionRipe.conn
@@ -157,7 +157,9 @@ def dbRequest(method, url, body=None, headers={}):
     c = SecureConnectionRipe().conn
     
     u = '/whois/' + url + '?password=' + conf.registrar['Ripe']['account_pw']
-    l.logDebug('dbRequest(,body,,): %s' % (body))
+    l.logDebug('dbRequest(method,url,,,): %s %s' % (method, u))
+    l.logDebug('dbRequest(,,,headers,): %s' % (repr(headers)))
+    l.logDebug('dbRequest(,,body,,): %s' % (body))
     c.request(method, u, body, headers)
     
     with c.getresponse() as r1:

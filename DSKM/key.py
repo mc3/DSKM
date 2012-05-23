@@ -300,7 +300,7 @@ class SigningKey(object):
                     + repr(inactive_from_now) + 'd ' \
                         + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
                 else:                           # yes
-                    print('%%Failed timely key rollover of %s before %s' % (file_name, datetime.fromtimestamp(cloneFromKeyInactiveAt).isoformat()))
+                    l.logWarn('Failed timely key rollover of %s before %s' % (file_name, datetime.fromtimestamp(cloneFromKeyInactiveAt).isoformat()))
             l.logDebug(s)
             try:
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -476,7 +476,7 @@ class SigningKey(object):
     def state_transition(self, secondKey):          # secondKey is true if we are 2nd KSK/ZSK
         
         l.logDebug('state_transition(%s) called for %s %s' % (secondKey, self.keytag, self.type))
-        state = -1                                  # state is index into sate table
+        state = -1                                  # state is index into state table
         stt = None                                  # state table
         key = ''                                    # key for accessing state
         if self.type == 'KSK':                      # key signing key
@@ -489,7 +489,7 @@ class SigningKey(object):
         l.logDebug('State is %d (%s)' % (self.zone.pstat[key]['State'],stt[state]['s']))
         if state == -1:                             # initial state: begin signing
             state = 0
-            self.zone.pstat[key]['State'] = state   # we have an SigningKey instance advance state
+            self.zone.pstat[key]['State'] = state   # we have an SigningKey instance: advance state
             l.logDebug('New state is %d (%s)' % (self.zone.pstat[key]['State'],stt[state]['s']))
             l.logVerbose('State transition of %s/%s from -1 to %d(%s) after %s retries' %
                 (self.name, self.type, self.zone.pstat[key]['State'], stt[state]['s'], self.zone.pstat[key]['Retries']))
@@ -511,8 +511,26 @@ class SigningKey(object):
             self.zone.pstat[key]['State'] = state
             self.zone.pstat[key]['Retries'] = 0
             return True                             # we had a transition
-        self.zone.pstat[key]['Retries'] = str(int(self.zone.pstat[key]['Retries']) + 1)
+        if not secondKey and l.cronjob():
+            self.zone.pstat[key]['Retries'] = str(int(self.zone.pstat[key]['Retries']) + 1)
         l.logDebug('New state is %d (%s)' % (self.zone.pstat[key]['State'],stt[state]['s']))
+        timeout = stt[state]['t']
+        if timeout == 'N':      # no timeout
+            return False
+        elif timeout == 'S':    # short timeout
+            if int(self.zone.pstat[key]['Retries']) > int(conf.TIMEOUT_SHORT):
+                l.logWarn('Timeout [S] of state transition for %s/%s/%d at state %d (%s) after %s retries' %
+                ((self.name, self.type, self.keytag,
+                state, stt[state]['s'], self.zone.pstat[key]['Retries'])))
+            return False
+        elif timeout == 'P':    # short timeout
+            if int(self.zone.pstat[key]['Retries']) > \
+                int(conf.TIMEOUT_PREPUB_ADDITION) + int(conf.KSK_I_D_INTERVAL) * int(conf.CRON_FREQ):
+                l.logWarn('Timeout [P] of state transition for %s/%s/%d at state %d (%s) after %s retries' %
+                ((self.name, self.type, self.keytag,
+                state, stt[state]['s'], self.zone.pstat[key]['Retries'])))
+            return False
+        l.logWarn('Wrong statetable timeout value "%s"' % (timeout))
         return False                                # we stay in current state
     
     def activeTime(self):
@@ -530,25 +548,10 @@ class SigningKey(object):
     
     def delete_a(self, key_type, secondKey):
         l.logDebug('delete_a(key_type) called')
-        l.logDebug('Deleting one/more of %s' % self.mypath.list('K*'))
-        self.mypath.cd()                        # change to zone directory
-        for kf in os.listdir():       # loop once per key file in zone dir
-            if key_type == 'delete_all' and fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*') or \
-                fnmatch.fnmatch(kf, 'K*' + str(self.keytag) + '.*'): # delete all keyfiles or our keyfile
-                l.logDebug('Matched for deleting: %s' % (kf))
-                try:
-                    os.remove(path(kf))
-                    l.logVerbose('Deleted: %s' % (kf))
-                except:
-                    (exc_type, exc_value, exc_traceback) = sys.exc_info()
-                    l.logError("Can't delete keyfile, because %s" % (exc_value))
-                    e = misc.AbortedZone("")
-                    raise e
+        my_tag = self.keytag
         if key_type == 'delete_all':
-            self.zone.pcfg = copy.deepcopy(self.zone.icfg)               # initialize
-            self.zone.pstat = copy.deepcopy(self.zone.istat)
-            self.zone.saveCfgOrState('config')
-        return True
+            my_tag = 0
+        return self.zone.markForDeletion(my_tag)
     
     def rename_a(self, key_type, secondKey):
         l.logDebug('rename_a(key_type) called')
@@ -560,7 +563,7 @@ class SigningKey(object):
     
     def set_delete_time(self, secondKey):
         l.logDebug('set_delete_time() called')
-        self.mypath.cd()                        # change to zone directory
+        self.mypath.cd()                # change to zone directory
         try:
              (rubbish, result) = str(shell(conf.BIND_TOOLS + 'dnssec-settime   -D +' + str(conf.KSK_I_D_INTERVAL) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
         except script.CommandFailed:
@@ -621,7 +624,7 @@ class SigningKey(object):
                 ##import pdb;pdb.set_trace()
                 rds = zone.find_rrset(self.name + '.', 'RRSIG', covers=my_covers)
                 
-                if False:                               # need to leard how redirect pprint to string
+                if False:                               # need to learn how redirect pprint to string
                     dbgmsg1 = 'zone.find.rrset:\n'
                     dbgmsg2 = ''
                     pp = pprint.PrettyPrinter(indent=4,stream=dbgmsg2)
@@ -636,7 +639,7 @@ class SigningKey(object):
                         return True                 # at least one RR signed by ourselves
             except (dns.resolver.NoAnswer, KeyError): # KeyError if no RRSIGs exist
                 pass
-            except (dns.resolver.NXDOMAIN):
+            except (dns.resolver.NXDOMAIN):         # should never occur
                 errmsg = "%s: RRSIG query returned domain %s none-existent" % (self.name,)
                 l.logError(errmsg)
                 e = misc.AbortedZone('? ' + errmsg)
@@ -645,14 +648,44 @@ class SigningKey(object):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = "%s: RRSIG query network error: (Timeout or connection refused). %s, %s" % \
                     (self.name, exc_type, exc_value)
-                l.logError(errmsg)
-                e = misc.AbortedZone('? ' + errmsg)
-                raise e
+                l.logWarning(errmsg)
+            except (dns.exception.FormError):       # happens sometimes
+                (exc_type, exc_value, exc_traceback) = sys.exc_info()
+                errmsg = "%s: RRSIG query Format error: (FormError). %s, %s" % \
+                    (self.name, exc_type, exc_value)
+                l.logWarning(errmsg)
         return False
     
     def test_if_excluded(self, key_type, secondKey):       # test, if excluded from zone by our master
         l.logDebug('test_if_excluded(' + key_type + ') called') # (no longer used for signing)
         return not self.test_if_included(key_type, secondKey)
+    
+    def test_if_deleted(self, key_type, secondKey):         # test if DNSKEY has been deleted from RRset by master
+        if '1' in key_type and secondKey or '2' in key_type and not secondKey:
+            return False
+       
+        l.logDebug('test_if_deleted(' + key_type + ') called with name %s' % (self.name))
+        
+        r = master_resolver
+        try:
+            res = r.query(self.name, 'DNSKEY')
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            l.logWarn('test_if_deleted got NoAnswer or NXDOMAIN while querying for DNSKEY of %s' % (self.name))
+            pass
+        except (dns.exception.Timeout):
+            l.logWarn('test_if_deleted got timeout while querying for DNSKEY of %s' % (self.name))
+            pass
+        else:                                           # no exception
+            for dnskey_rdata in res.rrset.items:
+                keytag = dns.dnssec.key_id(dnskey_rdata)
+                if keytag == self.keytag:
+                    l.logDebug('test_if_deleted found matching keytag %s' % (self.keytag))
+                    return False
+            l.logDebug('test_if_deleted found no matching keytag %s' % (self.keytag))
+            return True                                 # key not found: has been deleted
+        l.logDebug('test_if_deleted returned False because of unsuccesfull query')
+        return False
+        
     
     def test_if_time_reached(self, time_type, secondKey):  # test, if arbitrary point in time reached
         
@@ -666,7 +699,7 @@ class SigningKey(object):
         elif time_type == 'zsk1_inactive':
             myTime = self.timingData['I']                                           # ZSK1 inactive = ZSK2 active
         elif time_type == 'zsk1_delete':
-            myTime = self.timingData['D']                                           # ZSK1 delete time reached
+            myTime = self.timingData['D'] + conf.TIMEOUT_SHORT * 3600               # ZSK1 delete time reached
         
         elif time_type == 'ds1_submit':                         # DS to be submitted prepublish interval after active
             myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
@@ -677,7 +710,7 @@ class SigningKey(object):
         elif time_type == 'ksk1_inactive':
             myTime = self.timingData['I']                                           # KSK1 inactive
         elif time_type == 'ksk1_delete':
-            myTime = self.timingData['D']                                           # KSK1 to be deleted
+            myTime = self.timingData['D'] + conf.TIMEOUT_SHORT * 3600               # KSK1 to be deleted
         elif time_type == 'ksk_delete':
             myTime = self.timingData['D'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # prepub interval after DS retirement
         else:
@@ -695,28 +728,29 @@ class SigningKey(object):
     # -----------------------------
     # State tables in SigningKey
     # -----------------------------
-    #          s = state                 c = check cond. for transition, ca = argument for c, a = action aa=arg  ns = next state
+    #          s = state        t = timeout c = check cond. for transition, ca = argument for c, a = action aa=arg  ns = next state
     ZSTT = (
-            { 's': 'ZSK1 created',      'c': test_if_included,      'ca': 'zsk1',                                        },
-            { 's': 'ZSK1 active',       'c': test_if_time_reached,  'ca': 'zsk1_followup','a': create_a,  'aa': 'zsk'    },
-            { 's': 'ZSK2 created',      'c': test_if_included,      'ca': 'zsk2',                                        },
-            { 's': 'ZSK2 active',       'c': test_if_excluded,      'ca': 'zsk1',                                        },
-            { 's': 'ZSK1 inactive',     'c': test_if_time_reached,  'ca': 'zsk1_delete', 'a': delete_a,  'aa': 'zsk', 'ns': 1,}
+            { 's': 'ZSK1 created', 't':'S','c': test_if_included,      'ca': 'zsk1',                                        },
+            { 's': 'ZSK1 active',  't':'N','c': test_if_time_reached,  'ca': 'zsk1_followup','a': create_a,  'aa': 'zsk'    },
+            { 's': 'ZSK2 created', 't':'P','c': test_if_included,      'ca': 'zsk2',                                        },
+            { 's': 'ZSK2 active',  't':'S','c': test_if_excluded,      'ca': 'zsk1',                                        },
+            { 's': 'ZSK1 inactive','t':'P','c': test_if_deleted,       'ca': 'zsk1',         'a': delete_a,  'aa': 'zsk',  'ns': 1,}
     )
     zsk_state_max = 4
     
     KSTT = (
-            { 's': 'KSK1 created',      'c': test_if_included,      'ca': 'ksk1',                                        }, # 0
-            { 's': 'KSK1 active',       'c': test_if_time_reached,  'ca': 'ds1_submit',  'a': submit_ds, 'aa': 'publish1'}, # 1
-            { 's': 'DS1 submitted',     'c': test_if_included,      'ca': 'ds1',                                         }, # 2
-            { 's': 'DS1 published',     'c': test_if_time_reached,  'ca': 'ksk1_followup','a': create_a,  'aa': 'ksk'    }, # 3
-            { 's': 'KSK2 created',      'c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
-            { 's': 'KSK2 active',       'c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 5
-            { 's': 'DS2 published',     'c': test_if_excluded,      'ca': 'ds1',                                         }, # 6
-            { 's': 'DS1 retired',       'c': test_if_excluded,      'ca': 'ksk1'                                         }, # 7
-            { 's': 'KSK1 inactive',     'c': test_if_time_reached,  'ca': 'ksk1_delete', 'a': delete_a,  'aa': 'ksk', 'ns':3}, # 8
-            { 's': 'DS retire request submitted','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 9
-            { 's': 'DS retired',        'c': test_if_time_reached,  'ca': 'ksk_delete',  'a': delete_a,  'aa': 'delete_all','ns':-1}
+            { 's': 'KSK1 created', 't':'S','c': test_if_included,      'ca': 'ksk1',                                        }, # 0
+            { 's': 'KSK1 active',  't':'N','c': test_if_time_reached,  'ca': 'ds1_submit',  'a': submit_ds, 'aa': 'publish1'}, # 1
+            { 's': 'DS1 submitted','t':'S','c': test_if_included,      'ca': 'ds1',                                         }, # 2
+            { 's': 'DS1 published','t':'N','c': test_if_time_reached,  'ca': 'ksk1_followup','a': create_a,  'aa': 'ksk'    }, # 3
+            { 's': 'KSK2 created', 't':'S','c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
+            { 's': 'KSK2 active',  't':'S','c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 5
+            { 's': 'DS2 published','t':'S','c': test_if_excluded,      'ca': 'ds1',                                         }, # 6
+            { 's': 'DS1 retired',  't':'P','c': test_if_excluded,      'ca': 'ksk1'                                         }, # 7
+            { 's': 'KSK1 inactive','t':'P','c': test_if_deleted,       'ca': 'ksk1',     'a': delete_a,  'aa': 'ksk', 'ns':3}, # 8
+            { 's': 'DS retire request submitted',\
+                                   't':'S','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 9
+            { 's': 'DS retired',   't':'N','c': test_if_time_reached,  'ca': 'ksk_delete',  'a': delete_a,  'aa': 'delete_all','ns':-1}
     )
     ksk_state_max = 8
 

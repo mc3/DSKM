@@ -119,6 +119,8 @@ class managedZone(object):
         self.remoteDSchanged = False
         self.keys_just_created = []
         
+        self.keys_toBeDeleted = []
+        
         #-----------------------------
         # functions in managedZone.__init__
         #-----------------------------
@@ -188,8 +190,8 @@ class managedZone(object):
         if pd.exists:
             zl = ' <local>'
             self.parent_dir = pd
-        l.logVerbose('Working on %s (%s %s) at %s' % 
-                (self.name, self.parent, zl, datetime.fromtimestamp(time.time()).isoformat()))
+        l.logVerbose('Working at %s on %s (%s %s)' % 
+                (datetime.fromtimestamp(time.time()).isoformat(), self.name, self.parent, zl))
 
         try:
             cfg_file_name = 'dnssec-conf-' + self.name
@@ -271,6 +273,7 @@ class managedZone(object):
     def performStateTransition(self):
         self.keys_just_created = []
         self.remoteDSchanged = False
+        self.keys_toBeDeleted = []
         
         try:
             self.ksks.sort(key=dnsKey.SigningKey.activeTime)
@@ -348,8 +351,10 @@ class managedZone(object):
                     k.delete_a('one key', False)
             except:
                 raise
-                l.logError('Error while deleting recent key files while borting zone ' + self.name)
-        else:                               # don't save state if aborted by exception
+                l.logError('Error while deleting recent key files while aborting zone ' + self.name)
+        else:                               # don't save state or delete keys if aborted by exception
+            for kt in self.keys_toBeDeleted:
+                self.deleteKeys(kt)
             self.saveCfgOrState('state')
 
     
@@ -365,6 +370,30 @@ class managedZone(object):
         self.keys_just_created.append(k)
         return True
     
+    
+    def markForDeletion(self, key_tag):
+        self.keys_toBeDeleted.append(key_tag)
+        return True
+
+    def deleteKeys(self, key_tag):
+        l.logDebug('delete_a(%d) called')
+        l.logDebug('Deleting one/more of %s' % self.mypath.list('K*'))
+        self.mypath.cd()              # change to zone directory
+        for kf in os.listdir():       # loop once per key file in zone dir
+            if key_tag == 0 and fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*') or \
+                fnmatch.fnmatch(kf, 'K*' + str(key_tag) + '.*'): # delete all keyfiles or our keyfile
+                l.logDebug('Matched for deleting: %s' % (kf))
+                try:
+                    os.remove(path(kf))
+                    l.logVerbose('Deleted: %s' % (kf))
+                except:
+                    (exc_type, exc_value, exc_traceback) = sys.exc_info()
+                    l.logError("Can't delete keyfile, because %s" % (exc_value))
+        if key_tag == 0:
+            self.pcfg = copy.deepcopy(self.icfg)               # initialize
+            self.pstat = copy.deepcopy(self.istat)
+            self.saveCfgOrState('config')
+        return True
     
     def UpdateRemoteDS(self, activity, keytag):
         l.logDebug('UpdateRemoteDS called. submitted_to_parent contains: %s ' % (repr(self.pstat['submitted_to_parent'])))
@@ -477,14 +506,12 @@ class managedZone(object):
             secondKey = True
         self.pstat['ksk']['State'] = dnsKey.SigningKey.ksk_state_max + 1
         if force:
-            k = None
-            if len(self.ksks) > 0:
-                k = self.ksks[0]
-            elif len(self.zsks) > 0:
-                k = self.zsks[0]
-            if k:
-                k.delete_a('delete_all', False)
-                k.updateSOA(k.mypath + '/' + self.name + '.zone')
+            self.deleteKeys(0)
+            try:
+                res = str(shell(str('rndc loadkeys %s' % (self.name)), stderr='PIPE').stderr)
+                l.logDebug('Rndc loadkeys returned: %s' % (res))
+            except script.CommandFailed:
+                l.logError('Error during rndc loadkeys after deleting keys of %s' % (self.name, res))
         self.saveCfgOrState('state')
         if self.remoteDSchanged:
             l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))

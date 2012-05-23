@@ -1,0 +1,9 @@
+TODO list of DSKM
+
+Implement "offline registrar". Send E-Mail to hostmaster to request manual hand over of DS-RR to parent.
+
+Implement NSEC3
+
+Implement revoking of keys
+
+

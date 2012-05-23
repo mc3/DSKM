@@ -34,7 +34,7 @@ registrar['Ripe'] = {  'server': 'apps.db.ripe.net',
 
 
 #--------------------------
-# Email addresses
+# Email addresses for mailing error messages
 #--------------------------
 
 sender = 'hostmaster@my.net'
@@ -50,6 +50,13 @@ ROOT_PATH = '/var/named/master/signed'
 #   path to bind tools
 #--------------------------
 BIND_TOOLS = '/usr/local/sbin/'
+
+#------------------------------------------------------------------------------
+#   timing constans for state transition timeout
+#--------------------------
+CRON_FREQ = 24					# we are called by cron that many times per day
+TIMEOUT_SHORT = 5				# short timeout in hours
+TIMEOUT_PREPUB_ADDITION = 10	# how many hours to add to pre-pulish-interval to get timeout
 
 #--------------------------
 #   policy constants ( in days)

@@ -48,7 +48,9 @@ class Logger():
     _singleton = None
     debug = False
     verbose = False
+    cron = False
     debugText = ''
+    verboseText = ''
     
     def __new__(cls, *args, **kwargs):
         if not cls._singleton:
@@ -56,10 +58,11 @@ class Logger():
         return cls._singleton
     
     
-    def __init__(self, verbose=True, debug=False):
+    def __init__(self, verbose=True, debug=False, cron=False):
         
         Logger.debug = debug
         Logger.verbose = verbose
+        Logger.cron = cron
     
     
     def logError(self, text):
@@ -69,11 +72,14 @@ class Logger():
     
     def logWarn(self, text):
         print('%%%s' % (text))
+        Logger.verboseText = Logger.verboseText + '[' + text + ']\n'
         Logger.debugText = Logger.debugText + '%' + text + '\n'
+        self.sendMail('%' + text, Logger.verboseText)
     
     def logVerbose(self, text):
         if Logger.verbose:
             print('[%s]' % (text))
+        Logger.verboseText = Logger.verboseText + '[' + text + ']\n'
         Logger.debugText = Logger.debugText + '[' + text + ']\n'
     
     def logDebug(self, text, level=0):
@@ -82,7 +88,9 @@ class Logger():
         Logger.debugText = Logger.debugText + '[' + str(text) + ']\n'
     
     def sendMail(self, subject, body):
-        if not conf.mailRelay:
+        if not conf.mailRelay:          #?# #TBD# do we see conf.* here?
+            return
+        if not Logger.cron:             # mail only if cronjob
             return
         msg = MIMEText(body)
         msg['Subject'] = '[DSKM] ' + subject
@@ -91,4 +99,6 @@ class Logger():
         s = smtplib.SMTP(conf.mailRelay)
         s.send_message(msg)
         s.quit
-
+    
+    def cronjob(self):
+        return Logger.cron

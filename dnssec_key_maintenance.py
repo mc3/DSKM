@@ -71,11 +71,22 @@ registrar = {}
 registrar['TwoCows'] = {'server': 'dmapi.twocows.net',
                         'account_name': 'my_user_name',
                         'account_pw': 'blahblah' }
+registrar['Ripe'] = {  'server': 'apps.db.ripe.net',
+                        'account_name': 'ME-MNT',
+						'account_pw': 'my_secret',
+						'changed_email': 'hostmaster@my.domain' }
 
 #------------------------------------------------------------------------------
 #   Root of key management directories
 #--------------------------
 ROOT_PATH = '/var/named/master/signed'
+
+#------------------------------------------------------------------------------
+#   timing constans for state transition timeout
+#--------------------------
+CRON_FREQ = 24					# we are called by cron that many times per day
+TIMEOUT_SHORT = 5				# short timeout in hours
+TIMEOUT_PREPUB_ADDITION = 10	# how many hours to add to pre-pulish-interval to get timeout
 
 #--------------------------
 #   policy constants ( in days)
@@ -113,7 +124,10 @@ NS_TIMEOUT = 10                 # name server timeout
 #------------------------------------------------------------------------------
 
 script.doc.purpose = \
-    'Do maintenace of DNSsec keys.\n Create and delete them as necessary'
+    'Do maintenace of DNSsec keys.\n Create and delete them as necessary.\nSubmit/cancle DS-RR to/at parent registrar.'
+
+opts.add('cron', action='store_true',
+                    help="Run as cronjob. Each run increments timeout timer.")
 
 opts.add('verbose', action='store_true')
 opts.add('debug', action='store_true')
@@ -121,7 +135,7 @@ opts.add('debug', action='store_true')
 opts.add('stopSigningOfZone', type="string",
                   help="Initiate procedure to make a zone unsigned. Argument is zone name.")
 opts.add('force', action='store_true',
-                  help="Force deletion of keys (ignore delete time) while stopping digning of zone")
+                  help="Force deletion of keys (ignore delete time) while stopping signing of zone")
 
 opts.add('registrar_status', action='store_true',
                   help="Query list of completed and pending requests of all registrars and terminate")
@@ -136,7 +150,7 @@ opts.add('query_status', type="string",
 def main():
     root = path(conf.ROOT_PATH)
     if opts.debug: opts.verbose = True
-    l = logger.Logger(opts.verbose, opts.debug)
+    l = logger.Logger(opts.verbose, opts.debug, opts.cron)
     
     if opts.registrar_status or opts.query_status:
         cl = reg.getResultList(opts.query_status)
@@ -178,7 +192,7 @@ def main():
                 res1 = z.stopSigning(opts.force)
                 print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop"]')
                 print('[...repeat until no DNSKEYs and RRSIGs remain in zone]')
-                return res1 and res2
+                return res1
             except misc.AbortedZone:
                 print('?Failed to stop signing of zone ' + zone_name)
                 return 1
