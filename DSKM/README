@@ -1,0 +1,155 @@
+DSKM DNSsec Key Management
+ 
+ Copyright (c) 2012 Axel Rau, axel.rau@chaos1.de
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Purpose:
+    DNSsec key management add-on to ISC bind 9.9.x for zones with
+        auto-dnssec maintain;
+        inline-signing yes;
+    .Creates and deletes keys, submits delegation signer (DS) resource records
+    or public DNSKEYs to parent.
+    Zones may be local, public or reverse (IP4 or IP6).
+
+Requirements:
+    bind 9.9.1+ http://www.isc.org/software/bind
+    python 3.2+ http://www.python.org/download/
+    pycrypto    http://www.pycrypto.org/
+    dnspython   http://www.dnspython.org/
+    script      http://lamb.cc/script/
+
+Installation:
+    After installation of the required software, unpack the DSKM tar archive.
+    Query usage of the main program at top level:
+    
+    root# python3 dnssec_key_maintenance.py -h
+    Usage: dnssec_key_maintenance.py [options]
+    
+    Purpose: Do maintenace of DNSsec keys.
+     Create and delete them as necessary.
+    Submit/cancle DS-RR to/at parent registrar.
+    
+    Options:
+      -h, --help            show this help message and exit
+      -c, --cron            Run as cronjob. Each run increments timeout timer.
+      -v, --verbose         
+      -d, --debug           
+      -s STOPSIGNINGOFZONE, --stopSigningOfZone=STOPSIGNINGOFZONE
+                            Initiate procedure to make a zone unsigned. Argument
+                            is zone name.
+      -f, --force           Force deletion of keys (ignore delete time) while
+                            stopping signing of zone
+      -r, --registrar_status
+                            Query list of completed and pending requests of all
+                            registrars and terminate
+      -q QUERY_STATUS, --query_status=QUERY_STATUS
+                            Give detailed registrar result status about <request-
+                            id>.
+
+Configuration:
+    named.conf  DSKM requires all managed zones to share a common root.
+                There is one directory per zone, which contains zone file,
+                keys, bind journal files and DSKM config and status files, e.g.:
+                    /var/named/master/signed/example.com
+                    /var/named/master/signed/sub.example.com
+                Corresponding named.conf fragments could look like:
+                    options {
+                    	dnssec-enable yes;
+                    	dnssec-validation yes;
+                    	directory "/var/named";
+                    	...
+                    }
+                    
+                    zone "example.com" IN {
+                    	type master;
+                    	file "master/signed/example.com/example.com.zone";
+                    	key-directory "master/signed/example.com/";
+                    	auto-dnssec maintain;
+                    	inline-signing yes;
+                    	allow-query {
+                    		any;
+                    	};
+                    };
+                    
+                    zone "sub.example.com" IN {
+                    	type master;
+                    	file "master/signed/sub.example.com/sub.example.com.zone";
+                    	key-directory "master/signed/sub.example.com/";
+                    	auto-dnssec maintain;
+                    	inline-signing yes;
+                    	allow-query {
+                    		any;
+                    	};
+                    };
+    
+    DSKM/conf.py
+                Please review the DSKM config file carefully:
+                masterA
+                    A list IPs where the (hidden) master may be reached by the script
+                external_secondaries
+                    A list of NS addresses of your public secondaries
+                external_recursives
+                    A list of NS addresses of public, validating NS
+                registrar
+                    Dict of dicts with account data, one per registrar.
+                    Initially mplemented is
+                        Joker for Joker.com see http://www.joker.com and
+                        Ripe (not really a registrar, but European
+                            Regional Internet Registry)
+                        (Names must be written literally as above)
+                sender, recipients, mailRelay for alarming mails, if run as cron job.
+                ROOT_PATH
+                    root of zone directories
+                
+                The other timing and crypto constants should be self explaining.
+        
+    example.com/dnssec-conf-example.com (
+                If you run the script with an empty zone directory (example.com),
+                it creates 2 files there:
+                    example.com/dnssec-conf-example.com
+                    example.com/dnssec-stat-example.com
+                You must then put the zone file there and edit the dnssec-conf-*
+                file, which initial content is:
+                    {
+                        "Registrar": "Local", 
+                        "Method": "unsigned"
+                    }
+                'Registrar' may be one of 'Local', 'Joker' or 'Ripe'
+                'Method must be changed to 'NSEC' (currently only).
+                If you then run the script, it will create the initial keys and
+                named will start signing the zone:
+        root# python3 dnssec_key_maintenance.py -v
+        [Scanning /var/named/master/signed]
+        [Working at 2012-05-31T15:01:33.932455 on example.com (com )]
+        Generating key pair..............+++ ...........+++ 
+        [Key Kexample.com.+008+26482.key created.]
+        [example.com/KSK/26482/-1(A:2012-05-31T15:01:33, I:2012-06-02T15:01:33, D:2012-06-03T15:01:33)]
+        Generating key pair.....................++++++ .............++++++ 
+        [Key Kexample.com.+008+27330.key created.]
+        [example.com/ZSK/27330/-1(A:2012-05-31T15:01:34, I:2012-06-01T15:01:34, D:2012-06-02T15:01:34)]
+        [State transition of example.com/KSK from -1 to 0(KSK1 created) after 0 retries]
+        [State transition of example.com/ZSK from -1 to 0(ZSK1 created) after 0 retries]
+        root# 
+                The 3 timestamps per key are Active (start signing with this key), 
+                Inactive(stop using this key for sigs) and Delete (remove key from DNSKEY rset).
+    
+    crontab:    Something like
+                    # hourly DNSsec key maintenance
+                    55	*	*	*	*	root	/usr/local/bin/python3 \
+                    /usr/local/cronscripts/dnssec_key_maintenance.py \
+                    -v -c >>/var/log/DSKM/dnssec_key_maintenance.log >&1
+                will do.
+                

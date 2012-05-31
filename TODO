@@ -1,9 +1,13 @@
 TODO list of DSKM
 
-Implement "offline registrar". Send E-Mail to hostmaster to request manual hand over of DS-RR to parent.
+1. print correct key tag in "%Timeout [S] of state transition for mailsec.net/KSK/13519 at state 4 (KSK2 created) after 17 retries" [Done]
 
-Implement NSEC3
+2. Send only one error or warning mail per invocation. [Done]
 
-Implement revoking of keys
+3. Implement "offline registrar". Send E-Mail to hostmaster to request manual hand over of DS-RR to parent.
+
+4. Implement NSEC3
+
+5. Implement revoking of keys
 
 

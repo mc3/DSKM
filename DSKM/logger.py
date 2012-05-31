@@ -1,34 +1,23 @@
-#!/usr/bin/env python3
-
 """
  DSKM DNSsec Key Management
  
  Copyright (c) 2012 Axel Rau, axel.rau@chaos1.de
- All rights reserved.
 
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions
- are met:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    - Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    - Redistributions in binary form must reproduce the above
-      copyright notice, this list of conditions and the following
-      disclaimer in the documentation and/or other materials provided
-      with the distribution.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- POSSIBILITY OF SUCH DAMAGE.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# -----------------------------------------
+logger.py - Logger class module - centraliced logging and alarming
 """
 
 import pprint
@@ -51,6 +40,8 @@ class Logger():
     cron = False
     debugText = ''
     verboseText = ''
+    lastError = ''
+    lastWarning = ''
     
     def __new__(cls, *args, **kwargs):
         if not cls._singleton:
@@ -65,28 +56,37 @@ class Logger():
         Logger.cron = cron
     
     
-    def logError(self, text):
-        print('?%s' % (text))
-        Logger.debugText = Logger.debugText + '?' + text + '\n'
-        self.sendMail('?' + text, Logger.debugText)
+    def logError(self, text):           # Fatal error
+        Logger.lastError = '?%s' % (text)
+        print(Logger.lastError)
+        Logger.debugText = Logger.debugText + Logger.lastError + '\n'
     
-    def logWarn(self, text):
-        print('%%%s' % (text))
-        Logger.verboseText = Logger.verboseText + '[' + text + ']\n'
-        Logger.debugText = Logger.debugText + '%' + text + '\n'
-        self.sendMail('%' + text, Logger.verboseText)
+    def logWarn(self, text):            # Warning
+        Logger.lastWarning = '%%%s' % (text)
+        print(Logger.lastWarning)
+        Logger.verboseText = Logger.verboseText + Logger.lastWarning + '\n'
+        Logger.debugText = Logger.debugText + Logger.lastWarning + '\n'
     
     def logVerbose(self, text):
+        im = '[%s]' % (text)            # informal message
         if Logger.verbose:
-            print('[%s]' % (text))
-        Logger.verboseText = Logger.verboseText + '[' + text + ']\n'
-        Logger.debugText = Logger.debugText + '[' + text + ']\n'
+            print(im)
+        Logger.verboseText = Logger.verboseText + im + '\n'
+        Logger.debugText = Logger.debugText + im + '\n'
     
     def logDebug(self, text, level=0):
+        dm = '[%s]' % (text)            # debug message
         if Logger.debug:
-            print('[%s]' % (text))
-        Logger.debugText = Logger.debugText + '[' + str(text) + ']\n'
+            print(dm)
+        Logger.debugText = Logger.debugText + dm + '\n'
     
+    def mailErrors(self):               # called by main on exit
+        if len(Logger.lastError) > 0:
+            self.sendMail(Logger.lastError, Logger.debugText)
+        elif len(Logger.lastWarning) > 0:
+            self.sendMail(Logger.lastWarning, Logger.verboseText)
+        
+
     def sendMail(self, subject, body):
         if not conf.mailRelay:          #?# #TBD# do we see conf.* here?
             return

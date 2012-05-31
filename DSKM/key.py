@@ -1,35 +1,25 @@
-#!/usr/bin/env python3
-
 """
  DSKM DNSsec Key Management
  
  Copyright (c) 2012 Axel Rau, axel.rau@chaos1.de
- All rights reserved.
 
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions
- are met:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    - Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    - Redistributions in binary form must reproduce the above
-      copyright notice, this list of conditions and the following
-      disclaimer in the documentation and/or other materials provided
-      with the distribution.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- POSSIBILITY OF SUCH DAMAGE.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# -----------------------------------------
+key.py - SigningKey class module
+
+# -----------------------------------------
 KSK roll over best practice from ttp://tools.ietf.org/html/draft-ietf-dnsop-rfc4641bis-10
 
 4.1.2.  Key Signing Key Rollovers
@@ -513,17 +503,29 @@ class SigningKey(object):
             return True                             # we had a transition
         if not secondKey and l.cronjob():
             self.zone.pstat[key]['Retries'] = str(int(self.zone.pstat[key]['Retries']) + 1)
-        l.logDebug('New state is %d (%s)' % (self.zone.pstat[key]['State'],stt[state]['s']))
         timeout = stt[state]['t']
         if timeout == 'N':      # no timeout
             return False
-        elif timeout == 'S':    # short timeout
+        key_type = stt[state]['ca']
+        if not key_type:
+            return False
+        if '1' in key_type and secondKey or '2' in key_type and not secondKey:
+            return False
+
+        if timeout == 'S':    # short timeout
             if int(self.zone.pstat[key]['Retries']) > int(conf.TIMEOUT_SHORT):
                 l.logWarn('Timeout [S] of state transition for %s/%s/%d at state %d (%s) after %s retries' %
                 ((self.name, self.type, self.keytag,
                 state, stt[state]['s'], self.zone.pstat[key]['Retries'])))
             return False
-        elif timeout == 'P':    # short timeout
+        elif 'I' in timeout or 'D' in timeout:
+            if not self.fixedTimeout(timeout):
+                return False
+            l.logWarn('Timeout [%s] of state transition for %s/%s/%d at state %d (%s) after %s retries' %
+            ((timeout, self.name, self.type, self.keytag,
+            state, stt[state]['s'], self.zone.pstat[key]['Retries'])))
+            return False
+        elif timeout == 'P':    # long timeout
             if int(self.zone.pstat[key]['Retries']) > \
                 int(conf.TIMEOUT_PREPUB_ADDITION) + int(conf.KSK_I_D_INTERVAL) * int(conf.CRON_FREQ):
                 l.logWarn('Timeout [P] of state transition for %s/%s/%d at state %d (%s) after %s retries' %
@@ -538,6 +540,16 @@ class SigningKey(object):
     
     def inactiveTime(self):
         return self.timingData['I']
+    
+    def fixedTimeout(self, time_type):                   # returns True, if fixed timeout has happened
+        l.logDebug('fixedTimeout(' + time_type + ') called')
+        myTime = self.timingData[time_type] + conf.TIMEOUT_SHORT * 3600  # timeout time
+        now = int(time.time())
+        l.logDebug('fixedTimeout: myTime=%s; now=%s' % (
+                        datetime.fromtimestamp(myTime).isoformat(), datetime.fromtimestamp(now).isoformat()))
+        if myTime <= now:
+            return True
+        return False                                    
     
     # -----------------------------
     # Actions on state transitions in SigningKey (immediately after one test below returns true)
@@ -578,10 +590,11 @@ class SigningKey(object):
     def test_if_included(self, key_type, secondKey):    # test, if included in zone by our master
         global master_resolver,secondary_resolver       # included means: used for signing
         
+        l.logDebug('test_if_included(' + key_type + ', ' + str(secondKey) + ') called with name %s' % (self.name))
         if '1' in key_type and secondKey or '2' in key_type and not secondKey:
             return False
        
-        l.logDebug('test_if_included(' + key_type + ') called with name %s' % (self.name))
+        l.logDebug('test_if_included(' + key_type + ', ' + str(secondKey) + ') testing %s' % (self.name))
         
         r = master_resolver
         if 'ds' in key_type:
@@ -611,6 +624,7 @@ class SigningKey(object):
                         return True
             return False
         else:                                           # testing for signed DNSKEY or SOA 
+            l.logDebug('test_if_included(): 0')
             try:
                 s = None
                 if self.zone.pcfg['Registrar'] == 'Local':  # zone maintained local?
@@ -637,7 +651,11 @@ class SigningKey(object):
                     if key_tag == self.keytag:
                         l.logDebug('test_if_included(key_type, secondKey) RRSIG matched ourselves')
                         return True                 # at least one RR signed by ourselves
-            except (dns.resolver.NoAnswer, KeyError): # KeyError if no RRSIGs exist
+            except (dns.resolver.NoAnswer, KeyError): # KeyError if no RRSIG of type <covers> and class IN exist
+                (exc_type, exc_value, exc_traceback) = sys.exc_info()
+                errmsg = str("%s: RRSIG query returned NoAnswer or KeyError\n(%s/%s/%s)"
+                    % (self.name, exc_type, exc_value, exc_traceback))
+                l.logDebug(errmsg)
                 pass
             except (dns.resolver.NXDOMAIN):         # should never occur
                 errmsg = "%s: RRSIG query returned domain %s none-existent" % (self.name,)
@@ -648,12 +666,12 @@ class SigningKey(object):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = "%s: RRSIG query network error: (Timeout or connection refused). %s, %s" % \
                     (self.name, exc_type, exc_value)
-                l.logWarning(errmsg)
+                l.logWarn(errmsg)
             except (dns.exception.FormError):       # happens sometimes
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = "%s: RRSIG query Format error: (FormError). %s, %s" % \
                     (self.name, exc_type, exc_value)
-                l.logWarning(errmsg)
+                l.logWarn(errmsg)
         return False
     
     def test_if_excluded(self, key_type, secondKey):       # test, if excluded from zone by our master
@@ -734,7 +752,7 @@ class SigningKey(object):
             { 's': 'ZSK1 active',  't':'N','c': test_if_time_reached,  'ca': 'zsk1_followup','a': create_a,  'aa': 'zsk'    },
             { 's': 'ZSK2 created', 't':'P','c': test_if_included,      'ca': 'zsk2',                                        },
             { 's': 'ZSK2 active',  't':'S','c': test_if_excluded,      'ca': 'zsk1',                                        },
-            { 's': 'ZSK1 inactive','t':'P','c': test_if_deleted,       'ca': 'zsk1',         'a': delete_a,  'aa': 'zsk',  'ns': 1,}
+            { 's': 'ZSK1 inactive','t':'D','c': test_if_deleted,       'ca': 'zsk1',         'a': delete_a,  'aa': 'zsk',  'ns': 1,}
     )
     zsk_state_max = 4
     
@@ -746,8 +764,8 @@ class SigningKey(object):
             { 's': 'KSK2 created', 't':'S','c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
             { 's': 'KSK2 active',  't':'S','c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 5
             { 's': 'DS2 published','t':'S','c': test_if_excluded,      'ca': 'ds1',                                         }, # 6
-            { 's': 'DS1 retired',  't':'P','c': test_if_excluded,      'ca': 'ksk1'                                         }, # 7
-            { 's': 'KSK1 inactive','t':'P','c': test_if_deleted,       'ca': 'ksk1',     'a': delete_a,  'aa': 'ksk', 'ns':3}, # 8
+            { 's': 'DS1 retired',  't':'I','c': test_if_excluded,      'ca': 'ksk1'                                         }, # 7
+            { 's': 'KSK1 inactive','t':'D','c': test_if_deleted,       'ca': 'ksk1',     'a': delete_a,  'aa': 'ksk', 'ns':3}, # 8
             { 's': 'DS retire request submitted',\
                                    't':'S','c':test_if_excluded,'ca':'ds',         'a': set_delete_time,           }, # 9
             { 's': 'DS retired',   't':'N','c': test_if_time_reached,  'ca': 'ksk_delete',  'a': delete_a,  'aa': 'delete_all','ns':-1}
