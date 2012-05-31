@@ -143,6 +143,8 @@ Configuration:
         [State transition of example.com/KSK from -1 to 0(KSK1 created) after 0 retries]
         [State transition of example.com/ZSK from -1 to 0(ZSK1 created) after 0 retries]
         root# 
+                Debug- and informal messages are in square brackets, warnings start with '%' and
+                errors start with '?'.
                 The 3 timestamps per key are Active (start signing with this key), 
                 Inactive(stop using this key for sigs) and Delete (remove key from DNSKEY rset).
     
