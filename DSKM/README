@@ -33,6 +33,8 @@ Requirements:
 
 Installation:
     After installation of the required software, unpack the DSKM tar archive.
+    Move the file dnssec_key_maintenance.py and the directory DSKM to the place
+    where your cron scripts live.
     Query usage of the main program at top level:
     
     root# python3 dnssec_key_maintenance.py -h
