@@ -69,34 +69,41 @@ Configuration:
                     /var/named/master/signed/sub.example.com
                 Corresponding named.conf fragments could look like:
                     options {
-                    	dnssec-enable yes;
-                    	dnssec-validation yes;
-                    	directory "/var/named";
-                    	...
+                        dnssec-enable yes;
+                        dnssec-validation yes;
+                        directory "/var/named";
+                        ...
                     }
                     
                     zone "example.com" IN {
-                    	type master;
-                    	file "master/signed/example.com/example.com.zone";
-                    	key-directory "master/signed/example.com/";
-                    	auto-dnssec maintain;
-                    	inline-signing yes;
-                    	allow-query {
-                    		any;
-                    	};
+                        type master;
+                        file "master/signed/example.com/example.com.zone";
+                        key-directory "master/signed/example.com/";
+                        auto-dnssec maintain;
+                        inline-signing yes;
+                        allow-query {
+                            any;
+                        };
                     };
                     
                     zone "sub.example.com" IN {
-                    	type master;
-                    	file "master/signed/sub.example.com/sub.example.com.zone";
-                    	key-directory "master/signed/sub.example.com/";
-                    	auto-dnssec maintain;
-                    	inline-signing yes;
-                    	allow-query {
-                    		any;
-                    	};
+                        type master;
+                        file "master/signed/sub.example.com/sub.example.com.zone";
+                        key-directory "master/signed/sub.example.com/";
+                        auto-dnssec maintain;
+                        inline-signing yes;
+                        allow-query {
+                            any;
+                        };
                     };
     
+    zone file   In case you have a local subdomain, insert something like
+                    sub                 IN  NS  localhost.
+                    $include "master/signed/example.com/sub.example.com.ds"
+                The included file must be empty (will be updated by DSKM).
+                Local domain, means an internal domain with local trust anchor
+                ("Registrar = Local" in example.com/dnssec-stat-example.com - see below)
+                
     DSKM/conf.py
                 Please review the DSKM config file carefully:
                 masterA
@@ -107,7 +114,7 @@ Configuration:
                     A list of NS addresses of public, validating NS
                 registrar
                     Dict of dicts with account data, one per registrar.
-                    Initially mplemented is
+                    Initially implemented is
                         Joker for Joker.com see http://www.joker.com and
                         Ripe (not really a registrar, but European
                             Regional Internet Registry)
@@ -118,7 +125,7 @@ Configuration:
                 
                 The other timing and crypto constants should be self explaining.
         
-    example.com/dnssec-conf-example.com (
+    example.com/dnssec-conf-example.com
                 If you run the script with an empty zone directory (example.com),
                 it creates 2 files there:
                     example.com/dnssec-conf-example.com
@@ -129,7 +136,7 @@ Configuration:
                         "Registrar": "Local", 
                         "Method": "unsigned"
                     }
-                'Registrar' may be one of 'Local', 'Joker' or 'Ripe'
+                'Registrar' may be one of 'Local', 'Joker' or 'Ripe'.
                 'Method must be changed to 'NSEC' (currently only).
                 If you then run the script, it will create the initial keys and
                 named will start signing the zone:
@@ -152,7 +159,7 @@ Configuration:
     
     crontab:    Something like
                     # hourly DNSsec key maintenance
-                    55	*	*	*	*	root	/usr/local/bin/python3 \
+                    55  *   *   *   *   root    /usr/local/bin/python3 \
                     /usr/local/cronscripts/dnssec_key_maintenance.py \
                     -v -c >>/var/log/DSKM/dnssec_key_maintenance.log >&1
                 will do.

@@ -605,12 +605,11 @@ class SigningKey(object):
             l.logDebug('test_if_included(): List of auth NS to query: %s' % (repr(r.nameservers)))
             try:
                 res = r.query(self.name, 'DS')
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
-                l.logDebug('test_if_included() got NoAnswer or NXDOMAIN')
-                pass
-            except (dns.exception.Timeout):
+            except dns.resolver.NoAnswer:
+                return False
+            except (dns.exception.Timeout, dns.resolver.NXDOMAIN):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
-                errmsg = "%s: DS query timed out. %s, %s" % \
+                errmsg = "%s: DS query timed out or gave NXDOMAIN. %s, %s" % \
                     (self.name, exc_type, exc_value)
                 l.logError(errmsg)
                 e = misc.AbortedZone('? ' + errmsg)
@@ -666,12 +665,16 @@ class SigningKey(object):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = "%s: RRSIG query network error: (Timeout or connection refused). %s, %s" % \
                     (self.name, exc_type, exc_value)
-                l.logWarn(errmsg)
-            except (dns.exception.FormError):       # happens sometimes
+                l.logError(errmsg)
+                e = misc.AbortedZone('? ' + errmsg)
+                raise e
+            except (dns.exception.FormError):
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = "%s: RRSIG query Format error: (FormError). %s, %s" % \
                     (self.name, exc_type, exc_value)
-                l.logWarn(errmsg)
+                l.logError(errmsg)
+                e = misc.AbortedZone('? ' + errmsg)
+                raise e
         return False
     
     def test_if_excluded(self, key_type, secondKey):       # test, if excluded from zone by our master
@@ -687,8 +690,10 @@ class SigningKey(object):
         r = master_resolver
         try:
             res = r.query(self.name, 'DNSKEY')
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
-            l.logWarn('test_if_deleted got NoAnswer or NXDOMAIN while querying for DNSKEY of %s' % (self.name))
+        except dns.resolver.NoAnswer:
+            return True
+        except dns.resolver.NXDOMAIN:
+            l.logWarn('test_if_deleted got NXDOMAIN while querying for DNSKEY of %s' % (self.name))
             pass
         except (dns.exception.Timeout):
             l.logWarn('test_if_deleted got timeout while querying for DNSKEY of %s' % (self.name))
