@@ -53,13 +53,13 @@ class Logger():
         
         Logger.debug = debug
         Logger.verbose = verbose
-        Logger.cron = cron
-    
+        Logger.cron = cron    
     
     def logError(self, text):           # Fatal error
         Logger.lastError = '?%s' % (text)
         print(Logger.lastError)
         Logger.debugText = Logger.debugText + Logger.lastError + '\n'
+
     
     def logWarn(self, text):            # Warning
         Logger.lastWarning = '%%%s' % (text)
@@ -82,15 +82,15 @@ class Logger():
     
     def mailErrors(self):               # called by main on exit
         if len(Logger.lastError) > 0:
-            self.sendMail(Logger.lastError, Logger.debugText)
+            self.sendMail(Logger.lastError, Logger.debugText, True)
         elif len(Logger.lastWarning) > 0:
-            self.sendMail(Logger.lastWarning, Logger.verboseText)
+            self.sendMail(Logger.lastWarning, Logger.verboseText, True)
         
 
-    def sendMail(self, subject, body):
-        if not conf.mailRelay:          #?# #TBD# do we see conf.* here?
+    def sendMail(self, subject, body, onlyCron=False):
+        if not conf.mailRelay:           # done, if not configured
             return
-        if not Logger.cron:             # mail only if cronjob
+        if onlyCron and not Logger.cron: # mail only if cronjob, if so requested
             return
         msg = MIMEText(body)
         msg['Subject'] = '[DSKM] ' + subject

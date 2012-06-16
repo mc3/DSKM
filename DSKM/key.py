@@ -625,6 +625,7 @@ class SigningKey(object):
         else:                                           # testing for signed DNSKEY or SOA 
             l.logDebug('test_if_included(): 0')
             try:
+                """
                 s = None
                 if self.zone.pcfg['Registrar'] == 'Local':  # zone maintained local?
                     s = conf.master[0]
@@ -636,7 +637,7 @@ class SigningKey(object):
                    my_covers = dns.rdatatype.SOA        # others signed by ZSK
                 ##import pdb;pdb.set_trace()
                 rds = zone.find_rrset(self.name + '.', 'RRSIG', covers=my_covers)
-                
+                print(repr(rds))
                 if False:                               # need to learn how redirect pprint to string
                     dbgmsg1 = 'zone.find.rrset:\n'
                     dbgmsg2 = ''
@@ -650,6 +651,29 @@ class SigningKey(object):
                     if key_tag == self.keytag:
                         l.logDebug('test_if_included(key_type, secondKey) RRSIG matched ourselves')
                         return True                 # at least one RR signed by ourselves
+                """
+                ns = None
+                if self.zone.pcfg['Registrar'] == 'Local':  # zone maintained local?
+                    ns = conf.master[0]
+                else:
+                    ns = conf.external_secondaries[-2]      # use 2nd to last of our secondaries for now **FIXME**
+                my_covers = dns.rdatatype.DNSKEY       # DNSKEYs signed by KSK
+                if self.type == 'ZSK':
+                    my_covers = dns.rdatatype.SOA      # others signed by ZSK
+                q = dns.message.make_query (self.name, my_covers, want_dnssec=True)
+                my_answer = dns.query.tcp (q, ns, conf.NS_TIMEOUT)
+                for rdata in my_answer.answer:
+                    for item in rdata.items:
+                        if item.rdtype == dns.rdatatype.RRSIG:
+                            if item.covers() == my_covers:
+                                if my_covers == dns.rdatatype.SOA:
+                                    l.logDebug('test_if_included() found RRSIG of SOA (%s)' % (self.keytag))
+                                    return True
+                                else:
+                                    l.logDebug('test_if_included(matching keytag: %s == %s' % (item.key_tag, self.keytag))
+                                    if item.key_tag == self.keytag:
+                                        return True
+                
             except (dns.resolver.NoAnswer, KeyError): # KeyError if no RRSIG of type <covers> and class IN exist
                 (exc_type, exc_value, exc_traceback) = sys.exc_info()
                 errmsg = str("%s: RRSIG query returned NoAnswer or KeyError\n(%s/%s/%s)"

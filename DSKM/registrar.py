@@ -57,6 +57,8 @@ def regRemoveAllDS(zone):
         return reg_joker.regRemoveAllDS(zone_name)
     elif zone.pcfg['Registrar'] == 'Ripe':
         return reg_ripe.regRemoveAllDS(zone_name)
+    elif zone.pcfg['Registrar'] == 'by hand':
+        return handOverByEmail(zone_name, [], str('Deletion of DS-RR of zone %s required' % zone_name))
     else:
         l.logError('Internal inconsistency: Unknown registrar "%s" in config' % (zone.pcfg['Registrar']))
     return None
@@ -67,6 +69,8 @@ def regAddDS(zone, args):
         return reg_joker.regAddDS(zone_name, args)
     elif zone.pcfg['Registrar'] == 'Ripe':
         return reg_ripe.regAddDS(zone_name, args)
+    elif zone.pcfg['Registrar'] == 'by hand':
+        return handOverByEmail(zone_name, args, str('DS-RR handover to parent of zone %s required' % zone_name))
     else:
         l.logError('Internal inconsistency: Unknown registrar "%s" in config' % (zone.pcfg['Registrar']))
     return None
@@ -74,3 +78,26 @@ def regAddDS(zone, args):
 def getResultList(rid):
     return reg_joker.getResultList(rid)
 
+def handOverByEmail(zone_name, args, subject):
+    body = ''
+    if len(args) == 0:
+        body = str('Please ask parent zone operator to remove all DS-RR / DNSKEY-RR for zone\n\t%s\n from parent zone.' % (zone_name))
+    else:
+        body = str('Please ask parent zone operator to adjust (delete/add) DS-RR / DNSKEY-RR for zone\n\t%s\n.\n' % (zone_name))
+        body = body + '''Inspect the following list of DS-RR / DNSKEY-RR pairs carefully.
+Any pairs, existing at parent and not in the following list must be deleted.
+Any pairs, missing at parent, must be added.\n'''
+        i = 1
+        for arg in args:
+            if (None, '') in (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])):
+                l.logError('Internal inconsitency: regAddDS(): at least one argument of key %d is empty: "%d","%d","%s"'
+                    % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])))
+                return None
+            body = body + str('\n\nDS-RR / DNSKEY-RR %d -------------------------------------\n' % (i))
+            body = body + str('DS\t%s %s %s\n' % (arg['tag'], arg['digest_type'], arg['digest']))
+            body = body + str('DNSKEY\t%s 3 8 %s\n' % (arg['flags'], arg['pubkey']))
+
+            i = i + 1
+    body = body + str('End of message ----------------------------------')
+    l.sendMail(subject, body)
+    return {'TID': 'E-Mail sent'}

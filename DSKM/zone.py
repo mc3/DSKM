@@ -191,6 +191,10 @@ class managedZone(object):
                 l.logError(' Wrong Method "%s" in zone config of %s' % (self.pcfg['Method'], self.name))
                 e = misc.AbortedZone("")
                 raise e
+            if self.pcfg['Registrar'] not in ('Local', 'by hand', 'Joker', 'Ripe'):
+                l.logError(' Wrong Registrar "%s" in zone config of %s' % (self.pcfg['Registrar'], self.name))
+                e = misc.AbortedZone("")
+                raise e
             if self.pstat['OldMethod'] not in ('unsigned', 'NSEC', 'NSEC3'):
                 l.logError(' Wrong OldMethod "%s" in zone config of %s' % (self.pstat['Method'], self.name))
                 e = misc.AbortedZone("")
