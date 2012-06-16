@@ -136,7 +136,10 @@ Configuration:
                         "Registrar": "Local", 
                         "Method": "unsigned"
                     }
-                'Registrar' may be one of 'Local', 'Joker' or 'Ripe'.
+                'Registrar' may be one of 'Local', 'by hand', 'Joker' or 'Ripe'.
+                	'Local' is zone with local trust anchor (private net etc.)
+                	'by hand' is zone for which handover of DS-RR/DNSKEY-RR to
+                		parent is done by human on behalf of an email sent by DSKM.
                 'Method must be changed to 'NSEC' (currently only).
                 If you then run the script, it will create the initial keys and
                 named will start signing the zone:
