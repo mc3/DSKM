@@ -81,7 +81,7 @@ def getResultList(rid):
 def handOverByEmail(zone_name, args, subject):
     body = ''
     if len(args) == 0:
-        body = str('Please ask parent zone operator to remove all DS-RR / DNSKEY-RR for zone\n\t%s\n from parent zone.' % (zone_name))
+        body = str('Please ask parent zone operator to remove all DS-RR for zone\n\t%s\n from parent zone.\n' % (zone_name))
     else:
         body = str('Please ask parent zone operator to adjust (delete/add) DS-RR / DNSKEY-RR for zone\n\t%s\n.\n' % (zone_name))
         body = body + '''Inspect the following list of DS-RR / DNSKEY-RR pairs carefully.
@@ -98,6 +98,6 @@ Any pairs, missing at parent, must be added.\n'''
             body = body + str('DNSKEY\t%s 3 8 %s\n' % (arg['flags'], arg['pubkey']))
 
             i = i + 1
-    body = body + str('End of message ----------------------------------')
+    body = body + str('\nEnd of message ----------------------------------\n')
     l.sendMail(subject, body)
     return {'TID': 'E-Mail sent'}
