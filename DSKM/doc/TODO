@@ -4,10 +4,8 @@ TODO list of DSKM
 
 2. Send only one error or warning mail per invocation. [Done]
 
-3. Implement "offline registrar". Send E-Mail to hostmaster to request manual hand over of DS-RR to parent.
+3. Implement "offline registrar". Send E-Mail to hostmaster to request manual hand over of DS-RR to parent [Done].
 
 4. Implement NSEC3
 
 5. Implement revoking of keys
-
-
