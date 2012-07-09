@@ -506,12 +506,13 @@ class managedZone(object):
             except script.CommandFailed:
                 l.logError('Error during rndc loadkeys after deleting keys of %s' % (self.name, res))
         self.saveCfgOrState('state')
-        if self.remoteDSchanged:
+        if self.remoteDSchanged and len(self.pstat['submitted_to_parent']) > 0:
             l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))
             res = reg.regRemoveAllDS(self)
             if not res:
-                l.logError("Failed to delete all DS-RR of %s at registrar %s" % (self.name, self.pcfg['Registrar']))
-                e = misc.AbortedZone()
+                em = str("Failed to delete all DS-RR of %s at registrar %s" % (self.name, self.pcfg['Registrar']))
+                l.logError(em)
+                e = misc.AbortedZone(em)
                 raise e
             l.logVerbose("DS-RRs of %s at registrar %s deleted" % (
                     self.name, self.pcfg['Registrar']))

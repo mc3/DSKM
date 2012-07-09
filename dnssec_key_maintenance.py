@@ -64,8 +64,8 @@ registrar['TwoCows'] = {'server': 'dmapi.twocows.net',
                         'account_pw': 'blahblah' }
 registrar['Ripe'] = {  'server': 'apps.db.ripe.net',
                         'account_name': 'ME-MNT',
-						'account_pw': 'my_secret',
-						'changed_email': 'hostmaster@my.domain' }
+                        'account_pw': 'my_secret',
+                        'changed_email': 'hostmaster@my.domain' }
 
 #------------------------------------------------------------------------------
 #   Root of key management directories
@@ -75,9 +75,9 @@ ROOT_PATH = '/var/named/master/signed'
 #------------------------------------------------------------------------------
 #   timing constans for state transition timeout
 #--------------------------
-CRON_FREQ = 24					# we are called by cron that many times per day
-TIMEOUT_SHORT = 5				# short timeout in hours
-TIMEOUT_PREPUB_ADDITION = 10	# how many hours to add to pre-pulish-interval to get timeout
+CRON_FREQ = 24                  # we are called by cron that many times per day
+TIMEOUT_SHORT = 5               # short timeout in hours
+TIMEOUT_PREPUB_ADDITION = 10    # how many hours to add to pre-pulish-interval to get timeout
 
 #--------------------------
 #   policy constants ( in days)
@@ -181,7 +181,7 @@ def main():
             try:
                 z = zone.managedZone(zone_name)
                 res1 = z.stopSigning(opts.force)
-                print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop"]')
+                print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop" ; rndc start]')
                 print('[...repeat until no DNSKEYs and RRSIGs remain in zone]')
                 return res1 and res2
             except misc.AbortedZone:
