@@ -106,7 +106,7 @@ Configuration:
                 
     DSKM/conf.py
                 Please review the DSKM config file carefully:
-                masterA
+                master A
                     A list IPs where the (hidden) master may be reached by the script
                 external_secondaries
                     A list of NS addresses of your public secondaries
@@ -124,6 +124,10 @@ Configuration:
                     root of zone directories
                 
                 The other timing and crypto constants should be self explaining.
+		The key timing constants are 'sticky': Changing them in DSKM/conf.py
+		does not affect active zones.
+		The secure way to apply changed timing data to active zones would be
+		to stop signing and start over with a vanilla conf file ( see below).
         
     example.com/dnssec-conf-example.com
                 If you run the script with an empty zone directory (example.com),

@@ -81,29 +81,37 @@ SOA_EXPIRE_INTERVAL = 7         #  SOA expire time
 SOA_NEGATIVE_CACHE_INTERVAL = 1
 
 """
+# key timing default intervals in days
+# Production
 # Pre-Publication Method with ZSK - cascaded intervals for timing metadata
                                 # published immediately after generation
-ZSK_P_A_INTERVAL = 0            # active (used to sign RRsets) 7 days after publish
-ZSK_A_I_INTERVAL = 30           # inactive 30 days after active
-ZSK_I_D_INTERVAL = 7            # deleted 7 days after inactive
+ZSK_P_A_INTERVAL = 4            # active (used to sign RRsets) 1 day after publish
+ZSK_A_I_INTERVAL = 60           # inactive 60 days after active
+ZSK_I_D_INTERVAL = 35           # deleted 35 days after inactive
+ZSK_I1_A2_INTERVAL = 1          # active of followup key 1 day after inactive (rollover time)
 
 # Double-RRset Method with KSK - cascaded intervals for timing metadata
                                 # published immediately after generation
-KSK_P_A_INTERVAL = 0            # active (used to sign DNSKEY RRsets) 7 days after publish
+KSK_P_A_INTERVAL = 7            # active (used to sign DNSKEY RRsets) 7 days after publish
 KSK_A_I_INTERVAL = 360          # inactive 360 days after active
-KSK_I_D_INTERVAL = 7            # deleted 7 days after inactive
+KSK_I_D_INTERVAL = 35           # deleted 35 days after inactive
+KSK_I1_A2_INTERVAL = 7          # active of followup key 7 days after inactive (rollover time)
 """
+
+# During Testing phase
 # Pre-Publication Method with ZSK - cascaded intervals for timing metadata
                                 # published immediately after generation
-ZSK_P_A_INTERVAL = 0            # active (used to sign RRsets) 7 days after publish
-ZSK_A_I_INTERVAL = 1            # inactive 30 days after active
-ZSK_I_D_INTERVAL = 1            # deleted 7 days after inactive
+ZSK_P_A_INTERVAL = 1            # active (used to sign RRsets) 1 day after publish
+ZSK_A_I_INTERVAL = 4            # inactive 4 days after active
+ZSK_I_D_INTERVAL = 1            # deleted 35 days after inactive
+ZSK_I1_A2_INTERVAL = 1          # active of followup key 1 day after inactive (rollover time)
 
 # Double-RRset Method with KSK - cascaded intervals for timing metadata
                                 # published immediately after generation
-KSK_P_A_INTERVAL = 0            # active (used to sign DNSKEY RRsets) 7 days after publish
-KSK_A_I_INTERVAL = 2            # inactive 360 days after active
-KSK_I_D_INTERVAL = 1            # deleted 7 days after inactive
+KSK_P_A_INTERVAL = 2            # active (used to sign DNSKEY RRsets) 2 days after publish
+KSK_A_I_INTERVAL = 8            # inactive 8 days after active
+KSK_I_D_INTERVAL = 2            # deleted 2 days after inactive
+KSK_I1_A2_INTERVAL = 2          # active of followup key 2 days after inactive (rollover time)
 
 # key algorithm
 """ 2012-03-04 bind-users:

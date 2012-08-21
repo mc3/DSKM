@@ -9,3 +9,5 @@ TODO list of DSKM
 4. Implement NSEC3
 
 5. Implement revoking of keys
+
+6. Prevent from validation error mail, if secondaries are not reachable.

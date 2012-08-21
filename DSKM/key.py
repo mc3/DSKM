@@ -125,6 +125,17 @@ import DSKM.misc as misc
 # Configurables
 # -----------------------------------------
 import DSKM.conf as conf
+
+if conf.ZSK_A_I_INTERVAL <= conf.ZSK_P_A_INTERVAL + \
+    conf.ZSK_I1_A2_INTERVAL + conf.ZSK_I_D_INTERVAL:
+    l.logError('Configuration error: ZSK_A_I_INTERVAL must be greater than ZSK_P_A_INTERVAL + ZSK_I1_A2_INTERVAL + ZSK_I_D_INTERVAL')
+    sys.exit(1)
+
+if conf.KSK_A_I_INTERVAL <= conf.KSK_P_A_INTERVAL + \
+    conf.KSK_I1_A2_INTERVAL + conf.KSK_I_D_INTERVAL:
+    l.logError('Configuration error: KSK_A_I_INTERVAL must be greater than KSK_P_A_INTERVAL + KSK_I1_A2_INTERVAL + KSK_I_D_INTERVAL')
+    sys.exit(1)
+
 #------------------------------------------------------------------------------
 
 master_resolver = dns.resolver.Resolver()
@@ -276,21 +287,22 @@ class SigningKey(object):
             self.file_name = file_name
             readKey(file_name)
         elif task == 'ZSK':             # active when predecessor inactive
-            inactive_from_now = conf.ZSK_P_A_INTERVAL + conf.ZSK_A_I_INTERVAL
-            delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
+            inactive_from_now = self.zone.pcfg['Timing']['zsk']['ai']               # 1st key is immediately active
+            delete_from_now = inactive_from_now + self.zone.pcfg['Timing']['zsk']['id']
             s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_ZSK) + ' -n ZONE ' \
-                + '-A +' + repr(conf.ZSK_P_A_INTERVAL) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
+                + '-A +' + str(0) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
                 + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
             if cloneFromKeyInactiveAt != 0:
-                prepublishInterval = cloneFromKeyInactiveAt - int(time.time()) - 60  # publish  one minute from now (seconds)
-                if prepublishInterval > 0:      # did we wait too long? (new active > old inactive ?)
-                    inactive_from_now = conf.ZSK_I_D_INTERVAL + conf.ZSK_A_I_INTERVAL # prepublish + inactive - active
-                    delete_from_now = inactive_from_now + conf.ZSK_I_D_INTERVAL
-                    s = conf.BIND_TOOLS + 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
-                    + repr(inactive_from_now) + 'd ' \
-                        + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
-                else:                           # yes
+                prepublishInterval = cloneFromKeyInactiveAt - int(time.time()) - 60 # active - now (seconds)
+                if prepublishInterval <= 0:      # did we wait too long? (new active > old inactive ?)
+                    prepublishInterval = int(time.time()) - 60                      # yes: publish in 1 minute
                     l.logWarn('Failed timely key rollover of %s before %s' % (file_name, datetime.fromtimestamp(cloneFromKeyInactiveAt).isoformat()))
+                prepublishIntervalDays = int(1 + prepublishInterval/(3600*24))
+                inactive_from_now = prepublishIntervalDays + self.zone.pcfg['Timing']['zsk']['ai']  # prep. + inact. - act.
+                delete_from_now = inactive_from_now + self.zone.pcfg['Timing']['zsk']['id']
+                s = conf.BIND_TOOLS + 'dnssec-keygen -S ' + file_name + ' -i +' + repr(prepublishInterval) + ' -I +' \
+                + repr(inactive_from_now) + 'd ' \
+                    + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY)
             l.logDebug(s)
             try:
                 result = shell(s, stdout='PIPE').stdout.strip()
@@ -302,10 +314,13 @@ class SigningKey(object):
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
         elif task == 'KSK':         # active now
-            inactive_from_now = conf.KSK_P_A_INTERVAL + conf.KSK_A_I_INTERVAL
-            delete_from_now = inactive_from_now + conf.KSK_I_D_INTERVAL
+            active_from_now = 0
+            if cloneFromKeyInactiveAt != 0: active_from_now = self.zone.pcfg['Timing']['ksk']['pa']
+            
+            inactive_from_now = active_from_now + self.zone.pcfg['Timing']['ksk']['ai']
+            delete_from_now = inactive_from_now + self.zone.pcfg['Timing']['ksk']['id']
             s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_KSK) + ' -n ZONE -f KSK ' \
-                + '-A +' + repr(conf.KSK_P_A_INTERVAL) + 'd -I +' + repr(inactive_from_now) + 'd ' \
+                + '-P +0d -A +' + repr(active_from_now) + 'd -I +' + repr(inactive_from_now) + 'd ' \
                 + '-D +' + repr(delete_from_now) + 'd -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
             if cloneFromKeyInactiveAt != 0 and cloneFromKeyInactiveAt < int(time.time()):
                 l.logWarn('Failed timely key rollover of %s before %s' % (file_name, datetime.fromtimestamp(cloneFromKeyInactiveAt).isoformat()))
@@ -527,7 +542,7 @@ class SigningKey(object):
             return False
         elif timeout == 'P':    # long timeout
             if int(self.zone.pstat[key]['Retries']) > \
-                int(conf.TIMEOUT_PREPUB_ADDITION) + int(conf.KSK_I_D_INTERVAL) * int(conf.CRON_FREQ):
+                int(conf.TIMEOUT_PREPUB_ADDITION) + int(self.zone.pcfg['Timing']['ksk']['id']) * int(conf.CRON_FREQ):
                 l.logWarn('Timeout [P] of state transition for %s/%s/%d at state %d (%s) after %s retries' %
                 ((self.name, self.type, self.keytag,
                 state, stt[state]['s'], self.zone.pstat[key]['Retries'])))
@@ -577,7 +592,7 @@ class SigningKey(object):
         l.logDebug('set_delete_time() called')
         self.mypath.cd()                # change to zone directory
         try:
-             (rubbish, result) = str(shell(conf.BIND_TOOLS + 'dnssec-settime   -D +' + str(conf.KSK_I_D_INTERVAL) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
+             (rubbish, result) = str(shell(conf.BIND_TOOLS + 'dnssec-settime   -D +' + str(self.zone.pcfg['Timing']['ksk']['id']) + 'd ' + self.file_name, stdout='PIPE').stdout).split(None)
         except script.CommandFailed:
              l.logError('Error from dnssec_settime while setting delete time of '  +keyFileName)
              e = misc.AbortedZone("")
@@ -667,7 +682,7 @@ class SigningKey(object):
                         if item.rdtype == dns.rdatatype.RRSIG:
                             if item.covers() == my_covers:
                                 if my_covers == dns.rdatatype.SOA:
-                                    l.logDebug('test_if_included() found RRSIG of SOA (%s)' % (self.keytag))
+                                    l.logDebug('test_if_included() RRSIG matched ourselves')
                                     return True
                                 else:
                                     l.logDebug('test_if_included(matching keytag: %s == %s' % (item.key_tag, self.keytag))
@@ -742,24 +757,26 @@ class SigningKey(object):
         myTime = 0
         l.logDebug('test_if_time_reached(' + time_type + ') called')
         if time_type == 'zsk1_followup':
-                myTime = self.timingData['I'] - conf.ZSK_I_D_INTERVAL * 3600 * 24   # ZSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['I'] - self.zone.pcfg['Timing']['zsk']['i1a2'] * 3600 * 24 - \
+            self.zone.pcfg['Timing']['zsk']['pa'] * 3600 * 24               # rollover + prepublish time before ZSK1 inactive
         elif time_type == 'zsk1_inactive':
             myTime = self.timingData['I']                                           # ZSK1 inactive = ZSK2 active
         elif time_type == 'zsk1_delete':
             myTime = self.timingData['D'] + conf.TIMEOUT_SHORT * 3600               # ZSK1 delete time reached
         
         elif time_type == 'ds1_submit':                         # DS to be submitted prepublish interval after active
-            myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['A'] + self.zone.pcfg['Timing']['ksk']['pa'] * 3600 * 24 # pa is pre publish interval
         elif time_type == 'ksk1_followup':
-            myTime = self.timingData['I'] - conf.KSK_I_D_INTERVAL * 3600 * 24   # KSK_I_D_INTERVAL is pre publish interval
-        elif time_type == 'ds2_submit':                         # DS to be submitted prepublish interval after active
-            myTime = self.timingData['A'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # KSK_I_D_INTERVAL is pre publish interval
+            myTime = self.timingData['I'] - self.zone.pcfg['Timing']['ksk']['i1a2'] * 3600 * 24 - \
+                    self.zone.pcfg['Timing']['ksk']['pa'] * 3600 * 24 # rollover + prepublish time before KSK1 inactive
+        elif time_type == 'ds2_submit':                               # DS to be submitted prepublish interval after active
+            myTime = self.timingData['A'] + self.zone.pcfg['Timing']['ksk']['pa'] * 3600 * 24 # pa is pre publish interval
         elif time_type == 'ksk1_inactive':
             myTime = self.timingData['I']                                           # KSK1 inactive
         elif time_type == 'ksk1_delete':
             myTime = self.timingData['D'] + conf.TIMEOUT_SHORT * 3600               # KSK1 to be deleted
         elif time_type == 'ksk_delete':
-            myTime = self.timingData['D'] + conf.KSK_I_D_INTERVAL * 3600 * 24       # prepub interval after DS retirement
+            myTime = self.timingData['D'] + self.zone.pcfg['Timing']['ksk']['pa'] * 3600 * 24 # prepub after DS retirement
         else:
             if __debug__:
                 raise AssertionError('?Internal error: test_if_time_reached called with wrong argument "%s"' % (time_type,))
@@ -790,7 +807,7 @@ class SigningKey(object):
             { 's': 'KSK1 active',  't':'N','c': test_if_time_reached,  'ca': 'ds1_submit',  'a': submit_ds, 'aa': 'publish1'}, # 1
             { 's': 'DS1 submitted','t':'S','c': test_if_included,      'ca': 'ds1',                                         }, # 2
             { 's': 'DS1 published','t':'N','c': test_if_time_reached,  'ca': 'ksk1_followup','a': create_a,  'aa': 'ksk'    }, # 3
-            { 's': 'KSK2 created', 't':'S','c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
+            { 's': 'KSK2 created', 't':'P','c': test_if_included,      'ca': 'ksk2',        'a': submit_ds, 'aa': 'publish2'}, # 4
             { 's': 'KSK2 active',  't':'S','c': test_if_included,      'ca': 'ds2',         'a': submit_ds, 'aa': 'retire'  }, # 5
             { 's': 'DS2 published','t':'S','c': test_if_excluded,      'ca': 'ds1',                                         }, # 6
             { 's': 'DS1 retired',  't':'I','c': test_if_excluded,      'ca': 'ksk1'                                         }, # 7

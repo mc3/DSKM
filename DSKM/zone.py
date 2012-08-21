@@ -80,9 +80,20 @@ class managedZone(object):
     def __init__(self, name):
         self.name = name
         
-        self.icfg = {'Method': 'unsigned',  # unsigned, NSEC or NSEC3 \
-                    'Registrar': 'Local'}   # Local, Joker, Ripe    \
-        
+        self.icfg = {'Method': 'unsigned',  # unsigned, NSEC or NSEC3       \
+                    'Registrar': 'Local',   # Local, Joker, Ripe            \
+                    'Timing': {'ksk': { 'pa': conf.KSK_P_A_INTERVAL,        \
+                                        'ai': conf.KSK_A_I_INTERVAL,        \
+                                        'id': conf.KSK_I_D_INTERVAL,        \
+                                        'i1a2': conf.KSK_I1_A2_INTERVAL     \
+                                        },                                  \
+                               'zsk': { 'pa': conf.ZSK_P_A_INTERVAL,        \
+                                        'ai': conf.ZSK_A_I_INTERVAL,        \
+                                        'id': conf.ZSK_I_D_INTERVAL,        \
+                                        'i1a2': conf.ZSK_I1_A2_INTERVAL     \
+                                        }                                   \
+                                }                                           \
+                    }
         self.istat = {}
         self.istat['ksk'] = {'State': -1,   # index into state table KSTT, \
                              'Retries': 0}  # Number of retries in current state
@@ -115,22 +126,29 @@ class managedZone(object):
         #-----------------------------
         def readConfig(cfg, domain_name, file_name):
             l.logDebug('Opening ' + domain_name + '/' + file_name)
+            timingAdded = False
             try:
                 with open(file_name) as fd:     # open config/status file for read
                     try:
                         k = ''
                         tstcfg = json.load(fd)
                         for k in iter(cfg):   # do simple syntax check
+                            if k == 'Timing' and k not in tstcfg:
+                                timingAdded = True
+                                tstcfg['Timing'] = copy.deepcopy(cfg['Timing'])
                             vt = tstcfg[k]    # raises if key missed
                             vo = cfg[k]
                             if isinstance(vo, dict):
                                 for k in iter(vo):
-                                    x = vo[k] # raises if key missed
+                                    vo1 = vo[k] # raises if key missed
+                                    if isinstance(vo1, dict):
+                                        for k in iter(vo1):
+                                            vo2 = vo1[k] # raises if key missed
                     except:                     # missing key: syntax error in cfg file
                         l.logError('Garbage found/Missing option ' + k + ' in configuration/status file "' + domain_name + '/' + file_name + '"')
                         e = misc.misc.AbortedZone("")
                         raise e
-                    cfg = tstcfg    
+                    cfg = tstcfg
             except IOError:                     # file not found
                 try:
                     with open(file_name, 'w') as fd:
@@ -141,7 +159,7 @@ class managedZone(object):
                     e = misc.misc.AbortedZone("")
                     raise e
             l.logDebug('Config/status ' + domain_name + '/' + file_name + ' contains:\n' + str(cfg))
-            return cfg
+            return (cfg, timingAdded)
                 
         def deleteKeyFiles():
             self.mypath.cd()                    # change to zone directory
@@ -179,14 +197,29 @@ class managedZone(object):
         if pd.exists:
             zl = ' <local>'
             self.parent_dir = pd
+        if l.verbose:
+            print('')
         l.logVerbose('Working at %s on %s (%s %s)' % 
                 (datetime.fromtimestamp(time.time()).isoformat(), self.name, self.parent, zl))
 
         try:
             cfg_file_name = 'dnssec-conf-' + self.name
-            self.pcfg = readConfig(self.pcfg, name, cfg_file_name)
+            (self.pcfg, timingAdded) = readConfig(self.pcfg, name, cfg_file_name)
+            if self.pcfg['Timing']['ksk']['ai'] <= self.pcfg['Timing']['ksk']['pa'] + \
+                self.pcfg['Timing']['ksk']['i1a2'] + self.pcfg['Timing']['ksk']['id']:
+                l.logError('Configuration error in %s: Timimg:ksk:ai must be greater than pa + i1a2 + id' % (cfg_file_name))
+                e = misc.AbortedZone("")
+                raise e
+            if self.pcfg['Timing']['zsk']['ai'] <= self.pcfg['Timing']['zsk']['pa'] + \
+                self.pcfg['Timing']['zsk']['i1a2'] + self.pcfg['Timing']['zsk']['id']:
+                l.logError('Configuration error in %s: Timimg:zsk:ai must be greater than pa + i1a2 + id' % (cfg_file_name))
+                e = misc.AbortedZone("")
+                raise e
+            if timingAdded:
+                self.saveCfgOrState('config')
+
             stat_file_name = 'dnssec-stat-' + self.name
-            self.pstat = readConfig(self.pstat, name, stat_file_name)
+            (self.pstat, timingAdded) = readConfig(self.pstat, name, stat_file_name)
             if self.pcfg['Method'] not in ('unsigned', 'NSEC', 'NSEC3'):
                 l.logError(' Wrong Method "%s" in zone config of %s' % (self.pcfg['Method'], self.name))
                 e = misc.AbortedZone("")
@@ -369,13 +402,16 @@ class managedZone(object):
         return True
 
     def deleteKeys(self, key_tag):
-        l.logDebug('delete_a(%d) called')
-        l.logDebug('Deleting one/more of %s' % self.mypath.list('K*'))
+        ##l.logDebug('delete_a(%d) called')
+        l.logVerbose('delete_a(%d) called')
+        ##l.logDebug('Deleting one/more of %s' % self.mypath.list('K*'))
+        l.logVerbose('Deleting one/more of %s' % self.mypath.list('K*'))
         self.mypath.cd()              # change to zone directory
         for kf in os.listdir():       # loop once per key file in zone dir
             if key_tag == 0 and fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*') or \
                 fnmatch.fnmatch(kf, 'K*' + str(key_tag) + '.*'): # delete all keyfiles or our keyfile
-                l.logDebug('Matched for deleting: %s' % (kf))
+                ##l.logDebug('Matched for deleting: %s' % (kf))
+                l.logVerbose('Matched for deleting: %s' % (kf))
                 try:
                     os.remove(path(kf))
                     l.logVerbose('Deleted: %s' % (kf))
@@ -504,7 +540,9 @@ class managedZone(object):
                 res = str(shell(str('rndc loadkeys %s' % (self.name)), stderr='PIPE').stderr)
                 l.logDebug('Rndc loadkeys returned: %s' % (res))
             except script.CommandFailed:
-                l.logError('Error during rndc loadkeys after deleting keys of %s' % (self.name, res))
+                l.logError('Error during rndc loadkeys after deleting keys of %s' % (self.name))
+        self.pstat['ksk']['Retries'] = 0
+        self.pstat['zsk']['Retries'] = 0
         self.saveCfgOrState('state')
         if self.remoteDSchanged and len(self.pstat['submitted_to_parent']) > 0:
             l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))

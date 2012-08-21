@@ -143,6 +143,7 @@ def main():
     if opts.debug: opts.verbose = True
     l = logger.Logger(opts.verbose, opts.debug, opts.cron)
     
+    
     if opts.registrar_status or opts.query_status:
         cl = reg.getResultList(opts.query_status)
         if not cl:
@@ -157,13 +158,15 @@ def main():
                 if k != 'result':
                     print('%s:\t%s' % (k, cl[k]))
         return 0
-
+    
     if not root.exists:
         l.logWarn('No key root directory; creating one.')
         root.mkdir(mode=0o750)
         root = path(conf.ROOT_PATH)
+    if opts.verbose:
+        print('')
     l.logVerbose('Scanning ' + root)
-
+    
     root.cd()
     root = path('.')
     zone_dirs = []
@@ -181,7 +184,7 @@ def main():
             try:
                 z = zone.managedZone(zone_name)
                 res1 = z.stopSigning(opts.force)
-                print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop" ; rndc start]')
+                print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop ; rndc start"]')
                 print('[...repeat until no DNSKEYs and RRSIGs remain in zone]')
                 return res1 and res2
             except misc.AbortedZone:
