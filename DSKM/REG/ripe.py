@@ -38,11 +38,6 @@ import sys
 theConnection = None
 theSecureConnection = None
 
-newChangedValue = ''
-updatedToday = False
-
-newDSrdata = set()
-
 # -----------------------------------------
 
 import DSKM.logger as logger
@@ -126,178 +121,168 @@ def getResultList(rid):
 
 def dbQuery(url):
     
-    c = ConnectionRipe().conn
+    c = SecureConnectionRipe().conn
     
-    u = '/whois/' + url
-    ##print('[Requesting.]')
+    u = '/' + url
+    l.logDebug('dbQuery: Host: %s GET %s' % (conf.registrar['Ripe']['server'], u))
     c.request('GET', u)
     
     with c.getresponse() as r1:
-        if r1.status != 200:
-            print('Query of RIPE.NET whois DB server failed , because: ' + r1.reason + ' - HTTP - status' + repr(r1.status))
-            return None
         t = etree.fromstring(r1.read())
-        return t
-    return 
+        if r1.status != 200:
+            l.logError('Query of RIPE.NET whois DB server failed , because: % - HTTP - status: %' %
+                (r1.reason, repr(r1.status)))
+    return t
 
 def dbRequest(method, url, body=None, headers={}):
     
     c = SecureConnectionRipe().conn
     
-    u = '/whois/' + url + '?password=' + conf.registrar['Ripe']['account_pw']
+    u = '/' + url + '?password=' + conf.registrar['Ripe']['account_pw']
+    # l.debug seems dysfunctional here:
     l.logDebug('dbRequest(method,url,,,): %s %s' % (method, u))
     l.logDebug('dbRequest(,,,headers,): %s' % (repr(headers)))
     l.logDebug('dbRequest(,,body,,): %s' % (body))
+    print('dbRequest(method,url,,,): %s %s' % (method, u))
+    print('dbRequest(,,,headers,): %s' % (repr(headers)))
+    print('dbRequest(,,body,,): %s' % (body))
     c.request(method, u, body, headers)
     
     with c.getresponse() as r1:
-        if r1.status != 200:
-            for line in r1.read().decode('ASCII').splitlines():
-                l.logDebug(line)
-            print('Request to RIPE.NET whois DB server failed , because: ' + r1.reason + ' - HTTP - status ' + repr(r1.status))
-            return None
         t = etree.fromstring(r1.read())
-        return t
-    return 
+        if r1.status != 200:
+            l.logError('Update of RIPE.NET whois DB server failed , because: %s - HTTP - status: %s' %
+                (r1.reason, repr(r1.status)))
+    etree.dump(t)
+    return t
 
-def makeRequest(zone_name, args):   # construct and perform the request from Ripe
-    global updatedToday
-    ele = None
-    addChanged = False
-    
+def makeRequest(zone_name, args):   # construct and perform the request for Ripe
+    newChangedValue = ''
+    ns = set()
+
+    received_tree = None
+    domain_atts = {}
+        
     if zone_name.split('.')[-1] not in 'arpa':
         l.logError('Internal inconsitency: Zone not supported by Ripe: "%s"' % (zone_name))
         return None
 
-    changedTimestamp()              # sets up value of 'changed' attribute
+    newChangedValue = changedTimestamp()    # sets up value of 'changed' attribute
     try:
-        ele = dbQuery('lookup/ripe/domain/' + zone_name) # query current config
+        # query current config
+        received_tree = dbQuery('search?source=ripe&query-string=' + zone_name + '&flags=no-filtering')
+        assert received_tree != None
     except:
         l.logError('Request query DS-RR of zone %s at Ripe failed' % (zone_name))
         return None
-    logDomainAttributes(ele)
-    os = domainAttributeSet(ele)    # old (existing) set of ds-rdata
-    ns = set()                      # new set of ds-rdata
-    b = ''                          # request body
-
+    
+    domain_atts = extract_domain_atts(received_tree)
+    if not extract_and_report_error_messages(received_tree):
+        return None
+    
     for arg in args:
         if (None, '') in (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])):
-            l.logError('Internal inconsitency: regAddDS(): at least one argument of key %d is empty: "%d","%d","%s"'
+            l.logError('Internal inconsistency: regAddDS(): at least one argument of key %d is empty: "%d","%d","%s"'
                 % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest'])))
             return None
         ns.add(str('%d %d %d %s' % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest']))))
         
-    if ns == os:
+    (changed_something, domain_atts) = updateDomainAtts(domain_atts, ns, newChangedValue)
+    if not changed_something:
         l.logWarn('No changes needed at registrar Ripe')
         return {'TID': ''}
-    if ns > os:
-        b =  makeAppend(ns - os)
-    else:
-        if ns == set():
-            b =  makeRemove()
-            addChanged = True
-        else:
-            b =  makeReplace(ns)
-            addChanged = True
+    
     h = {}
     h['Content-Type'] = 'application/xml'
-    ele = dbRequest('POST', 'modify/ripe/domain/' + zone_name, body=b, headers=h)
-    if ele is None:
+    b = etree.tostring(create_new_tree(domain_atts))
+    try:
+        # request update of config
+        received_tree = dbRequest('PUT', 'ripe/domain/' + zone_name, body=b, headers=h)
+        assert received_tree != None
+    except:
         l.logError('Request update DS-RR of zone %s to Ripe failed' % (zone_name))
         return None
-    logDomainAttributes(ele)
-    ts = domainAttributeSet(ele)
+    domain_atts = extract_domain_atts(received_tree)
+    if not extract_and_report_error_messages(received_tree):
+        return None
+    ts = set(domain_atts['ds-rdata'])
     if ns != ts:
         l.logError('DS-RR of zone %s returned from Ripe differ from request' % (zone_name))
         return None
-    if addChanged and not updatedToday:
-        b = makeAppend(set())
-        h = {}
-        h['Content-Type'] = 'application/xml'
-        ele = dbRequest('POST', 'modify/ripe/domain/' + zone_name, body=b, headers=h)
-        if ele is None:
-            l.logWarn('Could not add "changed" attribute')
-        logDomainAttributes(ele)
     return {'TID': newChangedValue}
     
-def makeAppend(setOfDS_rdata):
-    global updatedToday
+def extract_domain_atts(received_tree):
+    domain_atts = {}
+    for obj in received_tree.findall('objects/*'):
+        for (k,v) in obj.attrib.items():
+            if k == 'type' and v == 'domain':
+                for att in obj.findall('attributes/*'):
+                    name = att.get('name')
+                    value = att.get('value')
+                    print('%s: %s' % (name, value))
+                    if name in domain_atts:
+                        domain_atts[name].append(value)
+                    else:
+                        domain_atts[name] = [value]
+                        
+    for k in domain_atts:
+        domain_atts[k].sort()
+    return domain_atts
 
-    r = """
-<whois-modify>
-    <add>
-        <attributes>"""
-    for d in setOfDS_rdata:
-        r = r + str('               <attribute name="ds-rdata" value="%s"/>\n' % (d))
-    if not updatedToday:
-        r = r + str('               <attribute name="changed" value="%s"/>\n' % (newChangedValue))
-    r = r + """
-        </attributes>
-    </add>
-</whois-modify>"""
-    return r
+def extract_and_report_error_messages(received_tree):
+    error_messages = []
+    no_error = True
+    for em in received_tree.findall('errormessages/*'):
+        if em.tag == 'errormessage':
+            print(str(em))
+            severity = em.get('severity')
+            msg = em.get('text')
+            arg_list = []
+            arg_list[0] = ''
+            if severity == 'Error':
+                arg_list[0] = '?'
+                no_error = False
+            if severity == 'Warning': arg_list[0] = '%'
+            args = em.get('args')
+            for arg in args:
+                a = arg.get('value')
+                arg_list.append(a)
+            es = str('%s', msg % arg_list)
+            error_messages.append(es)
+            print(es)
+    return no_error
 
+def updateDomainAtts(domain_atts, ns, newChangedValue):
+    os = set(domain_atts['ds-rdata'])
+    if os == ns:
+        return (False, domain_atts)
+    else:
+        domain_atts['ds-rdata'] = list(ns)
+        if newChangedValue not in domain_atts['changed']:
+            domain_atts['changed'].append(newChangedValue)
+        return (True, domain_atts)
+
+def create_new_tree(domain_atts):
+    root = etree.Element('whois-resources')
+    ose = etree.SubElement(root, 'objects')
+    oe = etree.SubElement(ose, 'object')
+    oe.set('type', 'domain')
+    se = etree.SubElement(oe, 'source')
+    se.set('id', 'ripe')
+    ase = etree.SubElement(oe, 'attributes')
     
-def makeRemove():
-    r = """
-<whois-modify>
-    <remove attribute-type="ds-rdata"/>
-</whois-modify>"""
-    return r
-        
-
-def makeReplace(setOfDS_rdata):
-    r = """
-<whois-modify>
-    <replace attribute-type="ds-rdata">
-        <attributes>"""
-    for d in setOfDS_rdata:
-        r = r + str('               <attribute name="ds-rdata" value="%s"/>\n' % (d))
-    r = r + """
-        </attributes>
-    </replace>
-</whois-modify>"""
-    return r
-
-
-def domainAttributeSet(ele):        # return a set with values of attributes 'ds-rdata' and 
-                                    # and set global updatedToday, which is True, if changed today
-    global updatedToday
-    updatedToday = False
-    s = set()                       # result set
+    for k in domain_atts:
+        for v in domain_atts[k]:
+            a = etree.SubElement(ase, 'attribute')
+            a.set('name', k)
+            a.set('value', v)
     
-    oe = ele.findall("objects/object/attributes/*")
-    for o in oe:
-        name = None
-        value = None
-        for (k,v) in o.attrib.items():
-            if k == 'name':
-                name = v
-            if k == 'value':
-                value = v
-                if name == 'ds-rdata':
-                    s.add(value)
-                elif name == 'changed' and value == newChangedValue:
-                    updatedToday = True
-    return s
-
-def logDomainAttributes(ele):
-    if ele == None:
-        return
-    oe = ele.findall("objects/object/attributes/*")
-    for o in oe:
-        name = None
-        value = None
-        for (k,v) in o.attrib.items():
-            if k == 'name':
-                name = v
-            if k == 'value':
-                value = v
-                l.logDebug(str('  %s:\t%s' % (name, value)))
+    ##etree.dump(root)
+    return root
 
 def changedTimestamp():
-    global newChangedValue
+    newChangedValue = ''
     timestamp = datetime.now()
     newChangedValue = str('%s %s' % (conf.registrar['Ripe']['changed_email'], timestamp.strftime('%Y%m%d')))
-    return
+    return newChangedValue
 

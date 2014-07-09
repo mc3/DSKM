@@ -42,7 +42,7 @@ registrar = {}
 registrar['my_registrar'] = {	'server': 'reg.my.registrar',
 						'account_name': 'our_account',
 						'account_pw': 'secret' }
-registrar['Ripe'] = {  'server': 'apps.db.ripe.net',
+registrar['Ripe'] = {  'server': 'rest.db.ripe.net',
                         'account_name': 'ME-MNT',
 						'account_pw': 'my_secret',
 						'changed_email': 'hostmaster@my.domain' }
