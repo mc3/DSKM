@@ -24,6 +24,7 @@ REG/joker.py - Interface module to the registrar Joker.com Domain Management API
 
 # -----------------------------------------
 import http.client
+import ssl
 import time
 import urllib.parse
 
@@ -56,16 +57,19 @@ class ConnectionJoker(object):
     def __init__(self):
         self.myConnection = 0
         self.session = {}
-    
+        self.sslContext = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH, cafile=conf.ca_file)
         try:
-            self.myConnection = http.client.HTTPSConnection(conf.registrar['Joker']['server'])
+            self.myConnection = http.client.HTTPSConnection(conf.registrar['Joker']['server'], context=self.sslContext)
+            l.logDebug('HTTPS- connection succeeded. Authentication follows.')
             self.myConnection.request("GET", '/request/login?username=' + 
                 conf.registrar['Joker']['account_name'] + '&password=' + conf.registrar['Joker']['account_pw'])
+            l.logDebug('Authentication initiated.')
         except Exception:
             l.logError('Failed to connect to Joker.com DMAPI server, because ', str(sys.exc_info()[1]))
             return None
         
         r1 = self.myConnection.getresponse()
+        l.logDebug('Got authentication response.')
         if r1.status != 200:
             l.logError('Failed to connect to Joker.com DMAPI server, because: ' + r1.reason)
         while not r1.closed:
@@ -73,13 +77,19 @@ class ConnectionJoker(object):
                 if len(line) > 2:
                     (k,v) = line.split(':')
                     self.session[k] = v.strip()
+                    l.logDebug('Response: ' + k + ': ' + v)
                 else:
+                    l.logDebug('Got line shorter then 2 chars: ' + line)
                     break
+            l.logDebug('No more lines to read from response.')
+            break
+        l.logDebug('Collected authentication response.')
         if self.session['Status-Code'] != '0':
             l.logError('Failed to sign-on at Joker.com, because: ' + self.session['Status-Text'])
             for k in session.keys():
                 print(k, ': ',  self.session[k])
             return None
+        l.logDebug('Authentication succeeded.')
     
     def conn(self):
         return self.myConnection
@@ -115,6 +125,7 @@ def requestJoker(query_string):
         l.logError('Query was: "' + query_string + '"')
         return None
     r1 = c.getresponse()
+    l.logDebug('Got response.')
     if r1.status != 200:
         l.logError('Request to Joker.com DMAPI server failed , because: ' + r1.reason + ' - HTTP - status ' + repr(r1.status))
     while not r1.closed:
@@ -125,6 +136,7 @@ def requestJoker(query_string):
                 status[k] = v.strip()
             else:
                 result.append(line)
+        break
     if status['Status-Code'] != '0':
         lines = []
         for k in status.keys():
