@@ -47,7 +47,10 @@ registrar['Ripe'] = {  'server': 'rest.db.ripe.net',
 						'account_pw': 'my_secret',
 						'changed_email': 'hostmaster@my.domain' }
 
-
+#--------------------------
+# CA cert store filepath
+#--------------------------
+ca_file = '/usr/local/share/certs/ca-root-nss.crt'  # mozilla CA store
 #--------------------------
 # Email addresses for mailing error messages
 #--------------------------
