@@ -133,6 +133,12 @@ opts.add('registrar_status', action='store_true',
 
 opts.add('query_status', type="string",
                   help="Give detailed registrar result status about <request-id>.")
+
+opts.add('test_registrar_DS_submission', action='store_true',
+                  help="Delete and re-submit current DS-RR to registrar.")
+
+opts.add('-y', '--dry-run', dest='dry_run', action='store_true',
+                  help="Do not really change any data at registrar with --test_registrar_DS_submission.")
                   
 
 #--------------------------
@@ -169,18 +175,16 @@ def main():
     
     root.cd()
     root = path('.')
-    zone_dirs = []
-    zones = {}
     for dir in root.list('*'):
         if dir.is_dir:
-            zone_dirs.append(dir.name)
-    zone_dirs.sort(key = len)
-    zone_dirs.reverse()
+            misc.zone_dirs.append(dir.name)
+    misc.zone_dirs.sort(key = len)
+    misc.zone_dirs.reverse()
     
     if opts.stopSigningOfZone:
         zone_name = opts.stopSigningOfZone
         print('[Stopping signing of %s]' % zone_name)
-        if zone_name in zone_dirs:
+        if zone_name in misc.zone_dirs:
             try:
                 z = zone.managedZone(zone_name)
                 res1 = z.stopSigning(opts.force)
@@ -199,17 +203,36 @@ def main():
         return 1
     
     l.logDebug('[ Doing zones: ]')
-    l.logDebug( zone_dirs )
-    for zone_name in zone_dirs:
+    l.logDebug( misc.zone_dirs )
+    for zone_name in misc.zone_dirs:
         try:
-            zones[zone_name] = zone.managedZone(zone_name)
-            zones[zone_name].performStateTransition()
-            zones[zone_name].validate()
+            misc.zones[zone_name] = zone.managedZone(zone_name)
         except misc.AbortedZone as a:
             print(a.data)
             print('%Skipping zone ' + zone_name)
         except misc.CompletedZone:
             pass
-    l.mailErrors()
+
+    if opts.test_registrar_DS_submission:
+        for zone_name in misc.zone_dirs:
+            try:
+                reg.regTest(misc.zones[zone_name], opts.dry_run)
+            except misc.AbortedZone as a:
+                print(a.data)
+                print('%Skipping zone ' + zone_name)
+            except misc.CompletedZone:
+                pass
+        return 0
+    if opts.cron:
+        for zone_name in misc.zone_dirs:
+            try:
+                misc.zones[zone_name].performStateTransition()
+                misc.zones[zone_name].validate()
+            except misc.AbortedZone as a:
+                print(a.data)
+                print('%Skipping zone ' + zone_name)
+            except misc.CompletedZone:
+                pass
+        l.mailErrors()
 
 script.run(main)

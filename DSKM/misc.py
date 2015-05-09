@@ -37,6 +37,10 @@ l = logger.Logger()
 auth_NS = {}
 auth_resolver = {}
 
+# names and instances of zones, setup by main
+zone_dirs = []
+zones = {}
+
 #--------------------------
 #   classes
 #--------------------------

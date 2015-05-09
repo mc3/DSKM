@@ -134,8 +134,11 @@ def requestJoker(query_string):
             if len(items) == 2:
                 (k,v) = line.split(':')
                 status[k] = v.strip()
+                l.logDebug('Response: ' + k + ': ' + v)
             else:
                 result.append(line)
+                l.logDebug('Line: ' + line)
+
         break
     if status['Status-Code'] != '0':
         lines = []
