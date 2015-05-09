@@ -137,7 +137,7 @@ opts.add('query_status', type="string",
 opts.add('test_registrar_DS_submission', action='store_true',
                   help="Delete and re-submit current DS-RR to registrar.")
 
-opts.add('-y', '--dry-run', dest='dry_run', action='store_true',
+opts.add('-n', '--dry-run', dest='dry_run', action='store_true',
                   help="Do not really change any data at registrar with --test_registrar_DS_submission.")
                   
 

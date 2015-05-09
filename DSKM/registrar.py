@@ -77,6 +77,16 @@ def regAddDS(zone, args):
 
 def getResultList(rid):
     return reg_joker.getResultList(rid)
+    l.logWarn('No resultlists at Ripe')
+
+def regTest(zone, dry_run):
+    zone_name = zone.name
+    if zone.pcfg['Registrar'] == 'Joker':
+        ##return reg_joker.regTest(zone_name, dry_run)
+        return
+    elif zone.pcfg['Registrar'] == 'Ripe':
+        ##return reg_ripe.regTest(zone_name, dry_run)
+        return
 
 def handOverByEmail(zone_name, args, subject):
     body = ''
