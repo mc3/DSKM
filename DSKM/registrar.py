@@ -68,7 +68,7 @@ def regAddDS(zone, args):
     if zone.pcfg['Registrar'] == 'Joker':
         return reg_joker.regAddDS(zone_name, args)
     elif zone.pcfg['Registrar'] == 'Ripe':
-        return reg_ripe.regAddDS(zone_name, args)
+        return reg_ripe.regAddDS(zone_name, args, False, False)
     elif zone.pcfg['Registrar'] == 'by hand':
         return handOverByEmail(zone_name, args, str('DS-RR handover to parent of zone %s required' % zone_name))
     else:
@@ -85,7 +85,9 @@ def regTest(zone, dry_run):
         ##return reg_joker.regTest(zone_name, dry_run)
         return
     elif zone.pcfg['Registrar'] == 'Ripe':
-        ##return reg_ripe.regTest(zone_name, dry_run)
+        args = zone.argsForDSsubmission()
+        return reg_ripe.regAddDS(zone_name, args, True, dry_run)
+    else:
         return
 
 def handOverByEmail(zone_name, args, subject):

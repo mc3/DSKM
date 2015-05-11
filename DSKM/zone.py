@@ -318,8 +318,9 @@ class managedZone(object):
             
             if self.remoteDSchanged:
                 l.logVerbose('About to call registrar. List of keys to request DS-RR: %s ' % (repr(self.pstat['submitted_to_parent'])))
-
-                if len(self.pstat['submitted_to_parent']) == 0: # removed all DS from remote parents
+                
+                args = self.argsForDSsubmission()
+                if len(args) == 0: # removed all DS from remote parents
                     res = reg.regRemoveAllDS(self)
                     if not res:
                         l.logError("Failed to delete all DS-RR of %s at registrar %s" % (self.name, self.pcfg['Registrar']))
@@ -331,44 +332,17 @@ class managedZone(object):
                         if c in ('Proc-ID', 'Tracking-Id'):
                             print(c + ':   ' + res[c])
                 else:
-                    args = []
-                    for tag in self.pstat['submitted_to_parent']:
-                        for key in self.ksks:
-                            if key.keytag == tag:
-                                if conf.DIGEST_ALGO_DS == '' or conf.DIGEST_ALGO_DS == '-1':
-                                    arg = {}
-                                    arg['tag'] = tag
-                                    arg['alg'] = key.dnssec_alg
-                                    arg['digest_type'] = 1
-                                    arg['digest'] = key.dsHash[0]
-                                    if conf.DIGEST_ALGO_DS == '-1':
-                                        arg['flags'] = key.dnssec_flags
-                                        arg['pubkey'] = key.pubkey_base64
-                                    args.append(arg)
-                                
-                                if conf.DIGEST_ALGO_DS == '' or conf.DIGEST_ALGO_DS == '-2':
-                                    arg = {}
-                                    arg['tag'] = tag
-                                    arg['alg'] = key.dnssec_alg
-                                    arg['digest_type'] = 2
-                                    arg['digest'] = key.dsHash[1]
-                                    arg['flags'] = key.dnssec_flags
-                                    arg['pubkey'] = key.pubkey_base64
-                                    args.append(arg)
-                                
-                                break
-                    if len(args) > 0:
-                        res = reg.regAddDS(self, args)
-                        if not res:
-                            l.logError("Failed to update DS-RRs for keys %s of %s at registrar %s" % (
-                                repr(self.pstat['submitted_to_parent']), self.name, self.pcfg['Registrar']))
-                            e = misc.AbortedZone('')
-                            raise e
-                        l.logVerbose("DS-RRs for keys %s of %s at registrar %s updated" % (
-                                repr(self.pstat['submitted_to_parent']), self.name, self.pcfg['Registrar']))
-                        for c in res.keys():
-                            if c in ('Your mail was received at ......', 'TID'):
-                                print(c + ':   ' + res[c])
+                    res = reg.regAddDS(self, args)
+                    if not res:
+                        l.logError("Failed to update DS-RRs for keys %s of %s at registrar %s" % (
+                            repr(self.pstat['submitted_to_parent']), self.name, self.pcfg['Registrar']))
+                        e = misc.AbortedZone('')
+                        raise e
+                    l.logVerbose("DS-RRs for keys %s of %s at registrar %s updated" % (
+                            repr(self.pstat['submitted_to_parent']), self.name, self.pcfg['Registrar']))
+                    for c in res.keys():
+                        if c in ('Your mail was received at ......', 'TID'):
+                            print(c + ':   ' + res[c])
     
         except misc.AbortedZone:
             l.logError('Aborting zone ' + self.name)
@@ -383,6 +357,37 @@ class managedZone(object):
                 self.deleteKeys(kt)
             self.saveCfgOrState('state')
 
+    
+    def argsForDSsubmission(self):
+        args = []
+        if len(self.pstat['submitted_to_parent']) == 0:
+            return args
+        for tag in self.pstat['submitted_to_parent']:
+            for key in self.ksks:
+                if key.keytag == tag:
+                    if conf.DIGEST_ALGO_DS == '' or conf.DIGEST_ALGO_DS == '-1':
+                        arg = {}
+                        arg['tag'] = tag
+                        arg['alg'] = key.dnssec_alg
+                        arg['digest_type'] = 1
+                        arg['digest'] = key.dsHash[0]
+                        if conf.DIGEST_ALGO_DS == '-1':
+                            arg['flags'] = key.dnssec_flags
+                            arg['pubkey'] = key.pubkey_base64
+                        args.append(arg)
+                    
+                    if conf.DIGEST_ALGO_DS == '' or conf.DIGEST_ALGO_DS == '-2':
+                        arg = {}
+                        arg['tag'] = tag
+                        arg['alg'] = key.dnssec_alg
+                        arg['digest_type'] = 2
+                        arg['digest'] = key.dsHash[1]
+                        arg['flags'] = key.dnssec_flags
+                        arg['pubkey'] = key.pubkey_base64
+                        args.append(arg)
+                    
+                    break
+        return args        
     
     def createFollowUpKey(self, sender):    # usually called by action routine to create a new key
         nsec3 = False

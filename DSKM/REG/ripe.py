@@ -106,9 +106,9 @@ def regRemoveAllDS(zone_name):
 
     return makeRequest(zone_name, ())
 
-def regAddDS(zone_name, args):
+def regAddDS(zone_name, args, test, dry_run):
 
-    return makeRequest(zone_name, args)
+    return makeRequest(zone_name, args, test, dry_run)
 
 
 def getResultList(rid):
@@ -132,20 +132,23 @@ def dbQuery(url):
         if r1.status != 200:
             l.logError('Query of RIPE.NET whois DB server failed , because: % - HTTP - status: %' %
                 (r1.reason, repr(r1.status)))
+    if l.debug:
+        print('[Dumping XML tree of dbQuery response:]')
+        etree.dump(t)
     return t
 
-def dbRequest(method, url, body=None, headers={}):
+def dbRequest(method, url, dry_run, body=None, headers={}):
     
     c = SecureConnectionRipe().conn
     
-    u = '/' + url + '?password=' + conf.registrar['Ripe']['account_pw']
+    dr = ''
+    if dry_run: dr = '&dry-run'
+    u = '/' + url + '?password=' + conf.registrar['Ripe']['account_pw'] + dr
     # l.debug seems dysfunctional here:
-    l.logDebug('dbRequest(method,url,,,): %s %s' % (method, u))
-    l.logDebug('dbRequest(,,,headers,): %s' % (repr(headers)))
-    l.logDebug('dbRequest(,,body,,): %s' % (body))
-    print('dbRequest(method,url,,,): %s %s' % (method, u))
-    print('dbRequest(,,,headers,): %s' % (repr(headers)))
-    print('dbRequest(,,body,,): %s' % (body))
+    if l.debug:
+        print('dbRequest(method,url,,,): %s %s' % (method, u))
+        print('dbRequest(,,,headers,): %s' % (repr(headers)))
+        print('dbRequest(,,body,,): %s' % (body))
     c.request(method, u, body, headers)
     
     with c.getresponse() as r1:
@@ -153,10 +156,12 @@ def dbRequest(method, url, body=None, headers={}):
         if r1.status != 200:
             l.logError('Update of RIPE.NET whois DB server failed , because: %s - HTTP - status: %s' %
                 (r1.reason, repr(r1.status)))
-    etree.dump(t)
+    if l.debug:
+        print('[Dumping XML tree of dbRequest response:]')
+        etree.dump(t)
     return t
 
-def makeRequest(zone_name, args):   # construct and perform the request for Ripe
+def makeRequest(zone_name, args, test, dry_run):   # construct and perform the request for Ripe
     newChangedValue = ''
     ns = set()
 
@@ -187,17 +192,20 @@ def makeRequest(zone_name, args):   # construct and perform the request for Ripe
             return None
         ns.add(str('%d %d %d %s' % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest']))))
         
-    (changed_something, domain_atts) = updateDomainAtts(domain_atts, ns, newChangedValue)
-    if not changed_something:
-        l.logWarn('No changes needed at registrar Ripe')
-        return {'TID': ''}
+    if test:
+        domain_atts['ds-rdata'] = list(ns)
+    else:
+        (changed_something, domain_atts) = updateDomainAtts(domain_atts, ns, newChangedValue)
+        if not changed_something:
+            l.logWarn('No changes needed at registrar Ripe')
+            return {'TID': ''}
     
     h = {}
     h['Content-Type'] = 'application/xml'
     b = etree.tostring(create_new_tree(domain_atts))
     try:
         # request update of config
-        received_tree = dbRequest('PUT', 'ripe/domain/' + zone_name, body=b, headers=h)
+        received_tree = dbRequest('PUT', 'ripe/domain/' + zone_name, dry_run, body=b, headers=h)
         assert received_tree != None
     except:
         l.logError('Request update DS-RR of zone %s to Ripe failed' % (zone_name))
@@ -238,16 +246,17 @@ def extract_and_report_error_messages(received_tree):
             severity = em.get('severity')
             msg = em.get('text')
             arg_list = []
-            arg_list[0] = ''
+            arg_list.append('')
             if severity == 'Error':
                 arg_list[0] = '?'
                 no_error = False
             if severity == 'Warning': arg_list[0] = '%'
             args = em.get('args')
-            for arg in args:
-                a = arg.get('value')
-                arg_list.append(a)
-            es = str('%s', msg % arg_list)
+            if args:
+                for arg in args:
+                    a = arg.get('value')
+                    arg_list.append(a)
+            es = str('%s' + msg % arg_list)
             error_messages.append(es)
             print(es)
     return no_error
@@ -258,8 +267,9 @@ def updateDomainAtts(domain_atts, ns, newChangedValue):
         return (False, domain_atts)
     else:
         domain_atts['ds-rdata'] = list(ns)
-        if newChangedValue not in domain_atts['changed']:
-            domain_atts['changed'].append(newChangedValue)
+        ## RIPE-NCC removed changed on 2015-05
+        ##if newChangedValue not in domain_atts['changed']:
+        ##    domain_atts['changed'].append(newChangedValue)
         return (True, domain_atts)
 
 def create_new_tree(domain_atts):

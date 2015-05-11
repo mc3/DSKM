@@ -282,7 +282,8 @@ class SigningKey(object):
         # end of functions in SigningKey.__init__
         #-----------------------------
 
-        l.logDebug('Creating SigningKey instance task=%s, name=%s, file_name=%s, nsec3=%s, cloneFromKeyInactiveAt=%d' % (task, name, file_name, nsec3, cloneFromKeyInactiveAt))
+        l.logDebug('Creating SigningKey instance task=%s, name=%s, file_name=%s, nsec3=%s, cloneFromKeyInactiveAt=%d'
+                                                            % (task, name, file_name, nsec3, cloneFromKeyInactiveAt))
         if task == 'read':
             self.file_name = file_name
             readKey(file_name)
