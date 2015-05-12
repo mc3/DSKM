@@ -28,42 +28,41 @@ conf.py - configuration module - site specific configuration parameters
 #	hidden master
 master = ('127.0.0.1',)
 
-##external_secondaries = ('ns2.lrau.net', 'ns3.lrau.net', 'ns4.lrau.net', 'puck.nether.net')
-external_secondaries = ('178.250.76.32', 'a02:1658:1::142:1', '91.216.35.171', '2a02:d40:2:18::71',
-                            '91.216.35.71', '2a02:d40:2:2::71')
+external_secondaries = ('2.3.76.32', '2a02:33:1::142:1', '91.66.3.171', '2a02:33:2:18::77',
+							'91.44.2.23', '2a02:33:2:2::77')
 
-##external_recursives = ('db1.in.chaos1.de', 'bind.odvr.dns-oarc.net')  ## db1 caches bad sigs too long?
-external_recursives = ('192.168.223.31', '2a02:d40:2:14::31', '149.20.64.20', '2001:4f8:3:2bc:1::64:20')
+##external_recursives = ('bind.odvr.dns-oarc.net')
+external_recursives = ('149.20.64.20', '2001:4f8:3:2bc:1::64:20')
 
 #--------------------------
 # registrars
 #--------------------------
 
 registrar = {}
-registrar['Joker'] = {  'server': 'dmapi.joker.com',
-                        'account_name': 'axel.rau@chaos1.de',
-                        'account_pw': 'qswuiisr' }
+registrar['my_registrar'] = {	'server': 'reg.my.registrar',
+						'account_name': 'our_account',
+						'account_pw': 'secret' }
 registrar['Ripe'] = {  'server': 'rest.db.ripe.net',
-                        'account_name': 'ARAU-MNT',
-                        'account_pw': 'Wafyaryo',
-                        'changed_email': 'hostmaster@lrau.net' }
+                        'account_name': 'ME-MNT',
+						'account_pw': 'my_secret',
+						'changed_email': 'hostmaster@my.domain' }
 
 #--------------------------
 # CA cert store filepath
 #--------------------------
-ca_file = '/usr/local/share/certs/ca-root-nss.crt'
+ca_file = '/usr/local/share/certs/ca-root-nss.crt'  # mozilla CA store
 #--------------------------
 # Email addresses for mailing error messages
 #--------------------------
 
-sender = 'hostmaster@lrau.net'
-recipients = ('Axel.Rau@Chaos1.DE', )
-mailRelay = '192.168.220.10'
+sender = 'hostmaster@my.net'
+recipients = ('me@my.net', )
+mailRelay = 'localhost'
 
 #------------------------------------------------------------------------------
 #   Root of key management directories
 #--------------------------
-ROOT_PATH = '/usr/local/etc/namedb/master/signed'
+ROOT_PATH = '/var/named/master/signed'
 
 #------------------------------------------------------------------------------
 #   path to bind tools

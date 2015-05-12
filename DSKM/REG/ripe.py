@@ -106,9 +106,9 @@ def regRemoveAllDS(zone_name):
 
     return makeRequest(zone_name, ())
 
-def regAddDS(zone_name, args, test, dry_run):
+def regAddDS(zone_name, args, test_run, dry_run):
 
-    return makeRequest(zone_name, args, test, dry_run)
+    return makeRequest(zone_name, args, test_run, dry_run)
 
 
 def getResultList(rid):
@@ -144,11 +144,11 @@ def dbRequest(method, url, dry_run, body=None, headers={}):
     dr = ''
     if dry_run: dr = '&dry-run'
     u = '/' + url + '?password=' + conf.registrar['Ripe']['account_pw'] + dr
-    # l.debug seems dysfunctional here:
-    if l.debug:
-        print('dbRequest(method,url,,,): %s %s' % (method, u))
-        print('dbRequest(,,,headers,): %s' % (repr(headers)))
-        print('dbRequest(,,body,,): %s' % (body))
+    # l.logDebug seems dysfunctional here:
+    l.logDebug('dbRequest(method,url,,,): %s %s' % (method, u))
+    l.logDebug('dbRequest(,,,headers,): %s' % (repr(headers)))
+    l.logDebug('dbRequest(,,body,,): %s' % (body))
+    l.logDebug('dbRequest(method,url,,,): %s %s' % (method, u))
     c.request(method, u, body, headers)
     
     with c.getresponse() as r1:
@@ -161,7 +161,7 @@ def dbRequest(method, url, dry_run, body=None, headers={}):
         etree.dump(t)
     return t
 
-def makeRequest(zone_name, args, test, dry_run):   # construct and perform the request for Ripe
+def makeRequest(zone_name, args, test_run, dry_run):   # construct and perform the request for Ripe
     newChangedValue = ''
     ns = set()
 
@@ -192,7 +192,7 @@ def makeRequest(zone_name, args, test, dry_run):   # construct and perform the r
             return None
         ns.add(str('%d %d %d %s' % (arg['tag'], arg['alg'], arg['digest_type'], str(arg['digest']))))
         
-    if test:
+    if test_run and len(ns) > 0:
         domain_atts['ds-rdata'] = list(ns)
     else:
         (changed_something, domain_atts) = updateDomainAtts(domain_atts, ns, newChangedValue)
@@ -202,7 +202,7 @@ def makeRequest(zone_name, args, test, dry_run):   # construct and perform the r
     
     h = {}
     h['Content-Type'] = 'application/xml'
-    b = etree.tostring(create_new_tree(domain_atts))
+    b = etree.tostring(create_new_tree(domain_atts), encoding="unicode")
     try:
         # request update of config
         received_tree = dbRequest('PUT', 'ripe/domain/' + zone_name, dry_run, body=b, headers=h)
@@ -242,23 +242,23 @@ def extract_and_report_error_messages(received_tree):
     no_error = True
     for em in received_tree.findall('errormessages/*'):
         if em.tag == 'errormessage':
-            print(str(em))
+            err = False
             severity = em.get('severity')
-            msg = em.get('text')
-            arg_list = []
-            arg_list.append('')
             if severity == 'Error':
-                arg_list[0] = '?'
                 no_error = False
-            if severity == 'Warning': arg_list[0] = '%'
-            args = em.get('args')
+                err = True
+            arg_list = []
+            arg_list.append(em.get('text'))
+            args = em.findall('args')
             if args:
                 for arg in args:
                     a = arg.get('value')
                     arg_list.append(a)
-            es = str('%s' + msg % arg_list)
-            error_messages.append(es)
-            print(es)
+            for arg in arg_list:
+                if err:
+                    l.logError(arg)
+                else:
+                    l.logWarn(arg)
     return no_error
 
 def updateDomainAtts(domain_atts, ns, newChangedValue):
@@ -281,12 +281,17 @@ def create_new_tree(domain_atts):
     se.set('id', 'ripe')
     ase = etree.SubElement(oe, 'attributes')
     
+    de = etree.Element('attribute')     #will become domain attribute
     for k in domain_atts:
         for v in domain_atts[k]:
-            a = etree.SubElement(ase, 'attribute')
-            a.set('name', k)
-            a.set('value', v)
-    
+            if k == 'domain':
+                de.set('name', k)
+                de.set('value', v)
+            else:
+                a = etree.SubElement(ase, 'attribute')
+                a.set('name', k)
+                a.set('value', v)
+    ase.insert(0, de)                   #domain attribute must be first
     ##etree.dump(root)
     return root
 
