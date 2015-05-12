@@ -60,8 +60,12 @@ Installation:
       -q QUERY_STATUS, --query_status=QUERY_STATUS
                             Give detailed registrar result status about <request-
                             id>.
-
-Configuration:
+      -t, --test_registrar_DS_submission
+                            Delete and re-submit current DS-RR to registrar.
+      -n, --dry-run         Do not really change any data at registrar with
+                            --test_registrar_DS_submission.
+    
+    Configuration:
     named.conf  DSKM requires all managed zones to share a common root.
                 There is one directory per zone, which contains zone file,
                 keys, bind journal files and DSKM config and status files, e.g.:
