@@ -107,6 +107,7 @@ import dns.dnssec, dns.zone
 
 import json
 import os
+from shutil import chown
 
 import re
 
@@ -312,6 +313,9 @@ class SigningKey(object):
                 e = misc.AbortedZone("")
                 raise e
             self.file_name = result + '.key'
+            if conf.OWNER_OF_PRIVATE_KEY != '':
+                chown(result + '.key',conf.OWNER_OF_PRIVATE_KEY)
+                chown(result + '.private',conf.OWNER_OF_PRIVATE_KEY)
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
         elif task == 'KSK':         # active now
@@ -333,6 +337,9 @@ class SigningKey(object):
                 e = misc.AbortedZone("")
                 raise e
             self.file_name = result + '.key'
+            if conf.OWNER_OF_PRIVATE_KEY != '':
+                chown(result + '.key',conf.OWNER_OF_PRIVATE_KEY)
+                chown(result + '.private',conf.OWNER_OF_PRIVATE_KEY)
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
         else:
