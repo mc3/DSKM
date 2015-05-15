@@ -121,10 +121,13 @@ class managedZone(object):
         
         self.keys_toBeDeleted = []
         
+        self.master_DNSKEY_cache = []
+        
         #-----------------------------
         # functions in managedZone.__init__
         #-----------------------------
         def readConfig(cfg, domain_name, file_name):
+            self.mypath.cd()                    # change to zone directory
             l.logDebug('Opening ' + domain_name + '/' + file_name)
             timingAdded = False
             try:
@@ -175,6 +178,7 @@ class managedZone(object):
                         raise e
     
         def saveState():
+            self.mypath.cd()                    # change to zone directory
             l.logDebug('New status of ' + self.name + ' contains:\n' + str(self.pstat))
             stat_file_name = 'dnssec-stat-' + self.name
             try:
@@ -446,6 +450,7 @@ class managedZone(object):
         return True   
     
     def saveCfgOrState(self, action):       # action is 'config' or 'state'
+        self.mypath.cd()                    # change to zone directory
         if action == 'config':
             cfg = self.pcfg
             filename = 'dnssec-conf-' + self.name
@@ -455,7 +460,8 @@ class managedZone(object):
         else:
             raise AssertionError('?Wrong action "%s" in saveCfgOrState() with zone %s' % (action, self.name))
         
-        l.logDebug('New %s of %s contains:\n %s ' % (action, self.name, str(cfg)))
+        l.logDebug('Saving config/state in file %s/%s\nNew %s of %s contains:\n %s ' %
+                    (os.getcwd(), filename, action, self.name, str(cfg)))
         try:
             with open(filename, 'w') as fd:
                 json.dump(cfg, fd, indent=8)

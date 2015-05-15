@@ -188,9 +188,10 @@ def main():
             try:
                 z = zone.managedZone(zone_name)
                 res1 = z.stopSigning(opts.force)
+                print('[Set dnssec-secure-to-insecure to yes in zone config of named.conf]')
                 print('[Do "cd <zone_dir>; rm *.jbk *.jnl *.signed ; sleep 1 ; rndc stop ; rndc start"]')
                 print('[...repeat until no DNSKEYs and RRSIGs remain in zone]')
-                return res1 and res2
+                return res1
             except misc.AbortedZone:
                 print('?Failed to stop signing of zone ' + zone_name)
                 return 1
@@ -223,16 +224,17 @@ def main():
             except misc.CompletedZone:
                 pass
         return 0
-    if opts.cron:
-        for zone_name in misc.zone_dirs:
-            try:
-                misc.zones[zone_name].performStateTransition()
-                misc.zones[zone_name].validate()
-            except misc.AbortedZone as a:
-                print(a.data)
-                print('%Skipping zone ' + zone_name)
-            except misc.CompletedZone:
-                pass
-        l.mailErrors()
+    for zone_name in misc.zone_dirs:
+        try:
+            misc.zones[zone_name].performStateTransition()
+            misc.zones[zone_name].validate()
+        except KeyError:
+            pass
+        except misc.AbortedZone as a:
+            print(a.data)
+            print('%Skipping zone ' + zone_name)
+        except misc.CompletedZone:
+            pass
+    l.mailErrors()
 
 script.run(main)

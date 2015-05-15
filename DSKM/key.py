@@ -107,6 +107,7 @@ import dns.dnssec, dns.zone
 
 import json
 import os
+from shutil import chown
 
 import re
 
@@ -312,6 +313,9 @@ class SigningKey(object):
                 e = misc.AbortedZone("")
                 raise e
             self.file_name = result + '.key'
+            if conf.OWNER_OF_PRIVATE_KEY != '':
+                chown(result + '.key',conf.OWNER_OF_PRIVATE_KEY)
+                chown(result + '.private',conf.OWNER_OF_PRIVATE_KEY)
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
         elif task == 'KSK':         # active now
@@ -333,6 +337,9 @@ class SigningKey(object):
                 e = misc.AbortedZone("")
                 raise e
             self.file_name = result + '.key'
+            if conf.OWNER_OF_PRIVATE_KEY != '':
+                chown(result + '.key',conf.OWNER_OF_PRIVATE_KEY)
+                chown(result + '.private',conf.OWNER_OF_PRIVATE_KEY)
             print('[Key ' + self.file_name + ' created.]')
             readKey(self.file_name)
         else:
@@ -353,6 +360,7 @@ class SigningKey(object):
                     getKeyTimingData('A'), getKeyTimingData('I'), getKeyTimingData('D')))
     
     def digestOfDS(self):
+        self.mypath.cd()
         def read1DS(i):
             digest = ''
             s = str(conf.BIND_TOOLS + 'dnssec-dsfromkey -%d %s' % (i, self.file_name))
@@ -445,6 +453,7 @@ class SigningKey(object):
     def updateSOA(self, filename): # update serial of SOA in zone file
         timestamp = datetime.now()
         current_date = timestamp.strftime('%Y%m%d')
+        self.mypath.cd()
         
         zf = ''
         with open(filename, 'r', encoding="ASCII") as fd:
@@ -695,7 +704,6 @@ class SigningKey(object):
                 errmsg = str("%s: RRSIG query returned NoAnswer or KeyError\n(%s/%s/%s)"
                     % (self.name, exc_type, exc_value, exc_traceback))
                 l.logDebug(errmsg)
-                pass
             except (dns.resolver.NXDOMAIN):         # should never occur
                 errmsg = "%s: RRSIG query returned domain %s none-existent" % (self.name,)
                 l.logError(errmsg)
@@ -722,32 +730,37 @@ class SigningKey(object):
         return not self.test_if_included(key_type, secondKey)
     
     def test_if_deleted(self, key_type, secondKey):         # test if DNSKEY has been deleted from RRset by master
+        l.logDebug('test_if_deleted: keytype: {} secondKey: {}'.format(key_type, secondKey))
         if '1' in key_type and secondKey or '2' in key_type and not secondKey:
+            l.logDebug('test_if_deleted: NoOP')
             return False
        
         l.logDebug('test_if_deleted(' + key_type + ') called with name %s' % (self.name))
         
-        r = master_resolver
-        try:
-            res = r.query(self.name, 'DNSKEY')
-        except dns.resolver.NoAnswer:
-            return True
-        except dns.resolver.NXDOMAIN:
-            l.logWarn('test_if_deleted got NXDOMAIN while querying for DNSKEY of %s' % (self.name))
-            pass
-        except (dns.exception.Timeout):
-            l.logWarn('test_if_deleted got timeout while querying for DNSKEY of %s' % (self.name))
-            pass
-        else:                                           # no exception
-            for dnskey_rdata in res.rrset.items:
-                keytag = dns.dnssec.key_id(dnskey_rdata)
-                if keytag == self.keytag:
-                    l.logDebug('test_if_deleted found matching keytag %s' % (self.keytag))
-                    return False
-            l.logDebug('test_if_deleted found no matching keytag %s' % (self.keytag))
-            return True                                 # key not found: has been deleted
-        l.logDebug('test_if_deleted returned False because of unsuccesfull query')
-        return False
+        keytags = self.masters_DNSKEYs()
+        if self.keytag in keytags:
+            l.logDebug('test_if_deleted(' + key_type + ') returning False with name %s' % (self.name))
+            return False
+        l.logDebug('test_if_deleted(' + key_type + ') returning True with name %s' % (self.name))
+        return True
+        
+    def masters_DNSKEYs(self):  # prevent from bruteforcing named by querying too often for DNSKEY
+        if len(self.zone.master_DNSKEY_cache) == 0:
+            r = master_resolver
+            res = None
+            try:
+                res = r.query(self.name, 'DNSKEY')
+            except dns.resolver.NoAnswer:
+                l.logError('masters_DNSKEYs got NOANSWER while querying for DNSKEY of %s' % (self.name))
+            except dns.resolver.NXDOMAIN:
+                l.logError('masters_DNSKEYs got NXDOMAIN while querying for DNSKEY of %s' % (self.name))
+            except (dns.exception.Timeout):
+                l.logError('masters_DNSKEYs got timeout while querying for DNSKEY of %s' % (self.name))
+            else:                                           # no exception
+                for dnskey_rdata in res.rrset.items:
+                    keytag = dns.dnssec.key_id(dnskey_rdata)
+                    self.zone.master_DNSKEY_cache.append(keytag)
+        return self.zone.master_DNSKEY_cache
         
     
     def test_if_time_reached(self, time_type, secondKey):  # test, if arbitrary point in time reached
