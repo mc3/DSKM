@@ -69,6 +69,10 @@ ROOT_PATH = '/var/named/master/signed'
 #--------------------------
 BIND_TOOLS = '/usr/local/sbin/'
 
+# chown keys to 'bind' if named running as 'bind' and we are running as root.
+# Keep empty if bind is running as root or we are not running as root
+OWNER_OF_PRIVATE_KEY = 'bind'   
+
 #------------------------------------------------------------------------------
 #   timing constans for state transition timeout
 #--------------------------
