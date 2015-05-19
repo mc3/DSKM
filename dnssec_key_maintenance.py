@@ -205,17 +205,16 @@ def main():
     
     l.logDebug('[ Doing zones: ]')
     l.logDebug( misc.zone_dirs )
-    for zone_name in misc.zone_dirs:
-        try:
-            misc.zones[zone_name] = zone.managedZone(zone_name)
-        except misc.AbortedZone as a:
-            print(a.data)
-            print('%Skipping zone ' + zone_name)
-        except misc.CompletedZone:
-            pass
 
     if opts.test_registrar_DS_submission:
         for zone_name in misc.zone_dirs:
+            try:
+                misc.zones[zone_name] = zone.managedZone(zone_name)
+            except misc.AbortedZone as a:
+                print(a.data)
+                print('%Skipping zone ' + zone_name)
+            except misc.CompletedZone:
+                pass
             try:
                 reg.regTest(misc.zones[zone_name], opts.dry_run)
             except misc.AbortedZone as a:
@@ -226,10 +225,9 @@ def main():
         return 0
     for zone_name in misc.zone_dirs:
         try:
+            misc.zones[zone_name] = zone.managedZone(zone_name)
             misc.zones[zone_name].performStateTransition()
             misc.zones[zone_name].validate()
-        except KeyError:
-            pass
         except misc.AbortedZone as a:
             print(a.data)
             print('%Skipping zone ' + zone_name)

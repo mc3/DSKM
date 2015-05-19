@@ -352,7 +352,7 @@ class managedZone(object):
             l.logError('Aborting zone ' + self.name)
             try:
                 for k in self.keys_just_created:
-                    k.delete_a('one key', False)
+                    self.deleteKeys(k.keytag)
             except:
                 raise
                 l.logError('Error while deleting recent key files while aborting zone ' + self.name)

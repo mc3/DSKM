@@ -227,6 +227,7 @@ def regAddDS(zone, args):
 	                        return None
 	                    q = q + str('&ds-%d=3:%d:%d:%s' %
 	                        (i, arg['alg'], arg['flags'], urllib.parse.quote(arg['pubkey'])))
+	                    l.logDebug('Unquoted pubkey: %s' % (arg['pubkey'], ))
 	                    i = i + 1
                 cl = requestJoker(q)
                 if not cl: return None
