@@ -489,17 +489,20 @@ class managedZone(object):
             nameservers = r.nameservers[:]
             for nameserver in nameservers[:]:
                 try:
+                    l.logDebug('Querying %s via UDP' % (nameserver, ))
                     response = dns.query.udp(request, nameserver, conf.NS_TIMEOUT)
                     if response.flags & dns.flags.TC:
                         # Response truncated; retry with TCP.
+                        l.logDebug('Querying %s via TCP' % (nameserver, ))
                         response = dns.query.tcp(request, nameserver, conf.NS_TIMEOUT)
-
                 except (socket.error, dns.exception.Timeout, dns.query.UnexpectedSource, dns.exception.FormError, EOFError):
+                    l.logDebug('Queryerror')
                     response = None
                     continue
                 rcode = response.rcode()
                 if rcode == dns.rcode.NOERROR or \
                        rcode == dns.rcode.NXDOMAIN:
+                    l.logDebug('Query gave NOERROR or NXDOMAIN')
                     break
                 response = None
             ## end of for nameserver in r.nameservers
