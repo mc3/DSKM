@@ -686,6 +686,7 @@ class SigningKey(object):
                 if self.type == 'ZSK':
                     my_covers = dns.rdatatype.SOA      # others signed by ZSK
                 q = dns.message.make_query (self.name, my_covers, want_dnssec=True)
+                l.logDebug('test_if_included(): Querying %s from %s' % (dns.rdatatype._by_value[my_covers], ns))
                 my_answer = dns.query.tcp (q, ns, conf.NS_TIMEOUT)
                 for rdata in my_answer.answer:
                     for item in rdata.items:
@@ -752,10 +753,13 @@ class SigningKey(object):
                 res = r.query(self.name, 'DNSKEY')
             except dns.resolver.NoAnswer:
                 l.logError('masters_DNSKEYs got NOANSWER while querying for DNSKEY of %s' % (self.name))
+                sys.exit(1)
             except dns.resolver.NXDOMAIN:
                 l.logError('masters_DNSKEYs got NXDOMAIN while querying for DNSKEY of %s' % (self.name))
+                sys.exit(1)
             except (dns.exception.Timeout):
                 l.logError('masters_DNSKEYs got timeout while querying for DNSKEY of %s' % (self.name))
+                sys.exit(1)
             else:                                           # no exception
                 for dnskey_rdata in res.rrset.items:
                     keytag = dns.dnssec.key_id(dnskey_rdata)
