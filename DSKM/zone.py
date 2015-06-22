@@ -305,6 +305,16 @@ class managedZone(object):
         self.remoteDSchanged = False
         self.keys_toBeDeleted = []
         
+        zone_loaded = True
+        try:
+            if misc.doQuery(self.name, 'SOA') == None:
+                zone_loaded = False
+        except Exception:
+            zone_loaded = False
+        if not zone_loaded:
+            l.logError('Master server does not serve {}.'.format(self.name))
+            l.logError('Zone not loaded? Skipping zone.')
+            return
         try:
             self.ksks.sort(key=dnsKey.SigningKey.activeTime)
             second = False

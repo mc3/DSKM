@@ -26,13 +26,13 @@ conf.py - configuration module - site specific configuration parameters
 
 # own dns servers
 #	hidden master
-master = ('127.0.0.1',)
+master = ['127.0.0.1']
 
-external_secondaries = ('2.3.76.32', '2a02:33:1::142:1', '91.66.3.171', '2a02:33:2:18::77',
-							'91.44.2.23', '2a02:33:2:2::77')
+external_secondaries = ['2.3.76.32', '2a02:33:1::142:1', '91.66.3.171', '2a02:33:2:18::77',
+							'91.44.2.23', '2a02:33:2:2::77']
 
 ##external_recursives = ('bind.odvr.dns-oarc.net')
-external_recursives = ('149.20.64.20', '2001:4f8:3:2bc:1::64:20')
+external_recursives = ['149.20.64.20', '2001:4f8:3:2bc:1::64:20']
 
 #--------------------------
 # registrars
