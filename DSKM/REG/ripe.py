@@ -227,6 +227,9 @@ def extract_domain_atts(received_tree):
                 for att in obj.findall('attributes/*'):
                     name = att.get('name')
                     value = att.get('value')
+                    ## RIPE-NCC introduced last-modified on 2015-06, which must not be provided
+                    if name == 'last-modified':
+                        continue
                     print('%s: %s' % (name, value))
                     if name in domain_atts:
                         domain_atts[name].append(value)
