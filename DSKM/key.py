@@ -294,6 +294,7 @@ class SigningKey(object):
             s = conf.BIND_TOOLS + 'dnssec-keygen -a ' + self.algo + ' -b ' + repr(conf.KEY_SIZE_ZSK) + ' -n ZONE ' \
                 + '-A +' + str(0) + 'd ' +'-I +' + repr(inactive_from_now) + 'd ' \
                 + '-D +' + repr(delete_from_now) +'d -L ' + repr(conf.TTL_DNSKEY) + ' ' + name
+            sn = s                      # preserve in case creation of cloned key fails
             if cloneFromKeyInactiveAt != 0:
                 prepublishInterval = cloneFromKeyInactiveAt - int(time.time()) - 60 # active - now (seconds)
                 if prepublishInterval <= 0:      # did we wait too long? (new active > old inactive ?)
@@ -309,9 +310,20 @@ class SigningKey(object):
             try:
                 result = shell(s, stdout='PIPE').stdout.strip()
             except script.CommandFailed:
-                l.logError('Error while creating ZSK for ' + name)
-                e = misc.AbortedZone("")
-                raise e
+                l.logWarn('Error while creating cloned ZSK for ' + name)
+                l.logWarn('Trashed Timing data in parent ?')
+                if s != sn:
+                    l.logWarn('Retrying uncloned create of ZSK')
+                    l.logDebug(sn)
+                    try:
+                        result = shell(sn, stdout='PIPE').stdout.strip()
+                    except script.CommandFailed:
+                        l.logError('Error while creating ZSK for ' + name)
+                        e = misc.AbortedZone("")
+                        raise e
+                else:
+                    e = misc.AbortedZone("")
+                    raise e
             self.file_name = result + '.key'
             if conf.OWNER_OF_PRIVATE_KEY != '':
                 chown(result + '.key',conf.OWNER_OF_PRIVATE_KEY)
@@ -565,6 +577,9 @@ class SigningKey(object):
     
     def inactiveTime(self):
         return self.timingData['I']
+    
+    def deleteTime(self):
+        return self.timingData['D']
     
     def fixedTimeout(self, time_type):                   # returns True, if fixed timeout has happened
         l.logDebug('fixedTimeout(' + time_type + ') called')
