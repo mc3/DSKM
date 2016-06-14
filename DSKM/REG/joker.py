@@ -274,6 +274,14 @@ def getResult(transactionID):
     stat['TID'] = transactionID
     return stat        
 
+def deleteResult(transactionID):
+    stat = requestJoker('result-delete?SvTrID=%s' % transactionID)
+    if stat['Status-Code'] != '0':
+        l.logVerbose('Deleting completion entry at Joker failed for {}'.format(
+                                                                transactionID))
+        return None
+    return stat        
+
 def printStatus(stat, show):
     lines = []
     for k in stat:

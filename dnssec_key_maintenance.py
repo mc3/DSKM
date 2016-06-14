@@ -131,6 +131,9 @@ opts.add('force', action='store_true',
 opts.add('registrar_status', action='store_true',
                   help="Query list of completed and pending requests of all registrars and terminate")
 
+opts.add('purge_all_registrar_completion_info', action='store_true',
+                  help="Purge all completion info of completed and pending requests of all registrars and terminate")
+
 opts.add('query_status', type="string",
                   help="Give detailed registrar result status about <request-id>.")
 
@@ -150,13 +153,21 @@ def main():
     l = logger.Logger(opts.verbose, opts.debug, opts.cron)
     
     
-    if opts.registrar_status or opts.query_status:
+    if opts.registrar_status or opts.query_status or \
+            opts.purge_all_registrar_completion_info:
         cl = reg.getResultList(opts.query_status)
         if not cl:
             l.logError('Failed')
             return 1
-        if opts.registrar_status:
-            print('----- timestamp ----- ---------- Tracking-Id ---------  Proc-ID task    domain    result')
+        if opts.purge_all_registrar_completion_info:
+            for line in cl['result']:
+                if len(line) < 10: continue
+                tid = line.split(' ')[1]
+                if reg.deleteResult(tid):
+                    print('.', end='', flush=true)
+            print()
+        elif opts.registrar_status:
+            print('- timestamp -- ---------- Tracking-Id --------- Proc-ID  --- task ---  domain    result')
             for line in cl['result']:
                 print(line)
         else:

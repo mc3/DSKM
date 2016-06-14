@@ -79,6 +79,10 @@ def getResultList(rid):
     return reg_joker.getResultList(rid)
     l.logWarn('No resultlists at Ripe')
 
+def deleteResult(transactionID):
+    return reg_joker.deleteResult(transactionID)
+    l.logWarn("Can't delete result info at Ripe")
+
 def regTest(zone, dry_run):
     zone_name = zone.name
     if zone.pcfg['Registrar'] == 'Joker':
