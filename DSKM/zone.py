@@ -488,6 +488,8 @@ class managedZone(object):
         if self.pstat['ksk']['State'] < 3 or self.pstat['ksk']['State'] > dnsKey.SigningKey.ksk_state_max or self.pcfg['Registrar'] == 'Local':
             return True
         
+        nsAliveTest(self.name)
+        
         l.logVerbose('Validating %s...' % (self.name))
         r = ext_recursive_resolver
         try:
@@ -582,6 +584,32 @@ class managedZone(object):
                 if c in ('Proc-ID', 'Tracking-Id'):
                     print(c + ':   ' + res[c])
         return 0         
+
+
+def nsAliveTest(theZone):         # query all authoritative NS for SOA of zone
+    global ext_recursive_resolver
+        
+    r = ext_recursive_resolver
+    
+    qname = dns.name.from_text(theZone)
+    request = dns.message.make_query(qname, rdtype=dns.rdatatype.SOA, rdclass=dns.rdataclass.ANY)
+    request.use_edns(r.edns, r.ednsflags, r.payload)
+    request.want_dnssec(True)
+    response = None
+    nameservers = misc.authNS(theZone)
+    for nameserver in nameservers[:]:
+        try:
+            l.logDebug('Querying {} for SOA of {} via TCP'.format(theZone, nameserver))
+            response = dns.query.tcp(request, nameserver, 10)
+            rcode = response.rcode()
+            if rcode == 0: continue
+        except (socket.error, dns.exception.Timeout, dns.query.UnexpectedSource,
+                dns.exception.FormError, EOFError, dns.resolver.NoAnswer,
+                dns.resolver.NXDOMAIN):
+            pass
+        l.logError('NS {} did not answer SOA query for {}'.format(
+                                                    nameserver, theZone))
+
 """
 r = misc.authResolver('2.0.0.0.0.4.d.0.2.0.a.2.ip6.arpa')
 for ns in r.nameservers:
