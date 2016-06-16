@@ -424,7 +424,7 @@ class managedZone(object):
         ##l.logDebug('delete_a(%d) called')
         l.logVerbose('delete_a(%d) called')
         ##l.logDebug('Deleting one/more of %s' % self.mypath.list('K*'))
-        l.logVerbose('Deleting one/more of %s' % self.mypath.list('K*'))
+        l.logVerbose('Deleting one/more of %s' % str(self.mypath.list('K*')))
         self.mypath.cd()              # change to zone directory
         for kf in os.listdir():       # loop once per key file in zone dir
             if key_tag == 0 and fnmatch.fnmatch(kf, 'K' + self.name + '.+*.*') or \
