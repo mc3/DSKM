@@ -68,7 +68,10 @@ def doQuery(theQuery, theRRtype):
         l.logDebug('doQuery(): Query: %s failed with %s' % (theQuery, exc_type))
         return None
     except (dns.exception.Timeout):
-        l.logError('Failed to query %s of zone %s' % (theRRtype, repr(theQuery)))
+        l.logError('Failed to query %s of zone %s (Timeout)' % (theRRtype, repr(theQuery)))
+        raise
+    except (dns.resolver.NoNameservers):
+        l.logError('Failed to query %s of zone %s (NoNameservers)' % (theRRtype, repr(theQuery)))
         raise
 
 def authNS(theZone):        # return list of NS addresses, authoritative for theZone
