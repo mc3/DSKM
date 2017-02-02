@@ -110,8 +110,8 @@ Installation:
                 
     DSKM/conf.py
                 Please review the DSKM config file carefully:
-                master A
-                    A list IPs where the (hidden) master may be reached by the script
+                master
+                    A list of IPs where the (hidden) master may be reached by the script
                 external_secondaries
                     A list of NS addresses of your public secondaries
                 external_recursives
