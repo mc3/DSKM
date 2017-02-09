@@ -265,7 +265,7 @@ def extract_and_report_error_messages(received_tree):
     return no_error
 
 def updateDomainAtts(domain_atts, ns, newChangedValue):
-    os = set(domain_atts['ds-rdata'])
+    os = set(domain_atts['ds-rdata']) if 'ds-rdata' in domain_atts else set()
     if os == ns:
         return (False, domain_atts)
     else:
