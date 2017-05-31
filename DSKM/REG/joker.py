@@ -74,8 +74,16 @@ class ConnectionJoker(object):
             l.logError('Failed to connect to Joker.com DMAPI server, because: ' + r1.reason)
         while not r1.closed:
             for line in r1.read().decode('ASCII').splitlines():
+                l.logDebug('Got line from Joker: {}'.format(line))
+                k = v = ''
                 if len(line) > 2:
-                    (k,v) = line.split(':')
+                    try:
+                        (kv) =  line.split(':')
+                        k = kv[0]
+                        v = ''.join(kv[1:])
+                    except (ValueError):
+                        l.logError('Parsing error while reading data from Joker.com. Line: {}'.format(line))
+                        return None
                     self.session[k] = v.strip()
                     l.logDebug('Response: ' + k + ': ' + v)
                 else:
