@@ -536,6 +536,30 @@ class managedZone(object):
         l.logError('Validation of %s FAILED' % (self.name))
         return False
     
+    # compare SOA serial of master with zone file (bind 9.11 may be out of sync) 
+    def verifySerial(self):
+        try:
+            answer = misc.doQuery(self.name, 'SOA')
+        except Exception:
+            l.logError('Failed to compare serial with zone file')
+            return False
+        result = [ str(rdata) for rdata in answer ][0].split()[2]
+        
+        filename = self.mypath + '/' + self.name + '.zone'
+        with open(filename, 'r', encoding="ASCII") as fd:
+            try:
+                zf = fd.read()
+            except:                 # file not found or not readable
+                raise Exception("verifySerial can't read zone file " + filename)
+        sea = re.search('(\d{10})(\s*;\s*)(Serial number)', zf)
+        serial = sea.group(1)
+                
+        l.logDebug('verifySerial of {}: file: {} dns: {}'.format(self.name, serial, result))
+        if int(serial) > int(result):   # file more recent than master server?
+            l.logError('Serial of {} out of sync: {} > {}'.format(self.name, serial, result))
+            return False
+        return True
+    
     def stopSigning(self, force):
         ##import pdb;pdb.set_trace()
         if not force:

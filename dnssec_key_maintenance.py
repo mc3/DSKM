@@ -226,6 +226,7 @@ def main():
                 print('%Skipping zone ' + zone_name)
             except misc.CompletedZone:
                 pass
+            
             try:
                 reg.regTest(misc.zones[zone_name], opts.dry_run)
             except misc.AbortedZone as a:
@@ -237,6 +238,7 @@ def main():
     for zone_name in misc.zone_dirs:
         try:
             misc.zones[zone_name] = zone.managedZone(zone_name)
+            if not misc.zones[zone_name].verifySerial(): continue
             misc.zones[zone_name].performStateTransition()
             misc.zones[zone_name].validate()
         except misc.AbortedZone as a:
