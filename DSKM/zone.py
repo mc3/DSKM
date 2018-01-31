@@ -620,7 +620,7 @@ def nsAliveTest(theZone):         # query all authoritative NS for SOA of zone
     nameservers = misc.authNS(theZone)
     for nameserver in nameservers[:]:
         try:
-            l.logDebug('Querying {} for SOA of {} via TCP'.format(theZone, nameserver))
+            l.logDebug('Querying {} for SOA of {} via TCP'.format(nameserver, theZone))
             response = dns.query.tcp(request, nameserver, 10)
             rcode = response.rcode()
             if rcode == 0: continue
