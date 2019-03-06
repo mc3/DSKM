@@ -42,7 +42,7 @@ l = logger.Logger()
 # -----------------------------------------
 # Configurables
 # -----------------------------------------
-import DSKM.conf as conf
+import DSKM.config as conf
 import DSKM.REG.joker as reg_joker
 import DSKM.REG.ripe as reg_ripe
 

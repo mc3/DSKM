@@ -25,7 +25,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 # -----------------------------------------
-import DSKM.conf as conf
+import DSKM.config as conf
 
 #--------------------------
 #   classes

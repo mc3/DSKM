@@ -153,6 +153,8 @@ def main():
     l = logger.Logger(opts.verbose, opts.debug, opts.cron)
     
     
+    import pdb; pdb.set_trace()
+    
     if opts.registrar_status or opts.query_status or \
             opts.purge_all_registrar_completion_info:
         cl = reg.getResultList(opts.query_status)

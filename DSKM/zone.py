@@ -59,7 +59,7 @@ import DSKM.misc as misc
 # -----------------------------------------
 # Configurables
 # -----------------------------------------
-import DSKM.conf as conf
+import DSKM.config as conf
 #------------------------------------------------------------------------------
 
 ext_recursive_resolver = dns.resolver.Resolver()

@@ -25,7 +25,7 @@ import dns.dnssec, dns.zone
 
 import sys
 
-import DSKM.conf as conf
+import DSKM.config as conf
 import DSKM.key
 
 import DSKM.logger as logger

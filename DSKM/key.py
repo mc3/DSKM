@@ -125,7 +125,7 @@ import DSKM.misc as misc
 # -----------------------------------------
 # Configurables
 # -----------------------------------------
-import DSKM.conf as conf
+import DSKM.config as conf
 
 if conf.ZSK_A_I_INTERVAL <= conf.ZSK_P_A_INTERVAL + \
     conf.ZSK_I1_A2_INTERVAL + conf.ZSK_I_D_INTERVAL:
