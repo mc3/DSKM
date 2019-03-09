@@ -22,7 +22,7 @@ along with serverPKI.  If not, see <http://www.gnu.org/licenses/>.
 import time
 import sys
 
-from pathlib import Path
+from script import path
 
 from DSKM.utils import options as opts
 import DSKM.config as conf
@@ -40,7 +40,7 @@ def execute_from_command_line():
     print('Options are {}.'.format(opts))
     
     
-    root = Path(conf.ROOT_PATH)
+    root = path(conf.ROOT_PATH)
     if opts.debug: opts.verbose = True
     l = logger.Logger(opts.verbose, opts.debug, opts.cron)
     
