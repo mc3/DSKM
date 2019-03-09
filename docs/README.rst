@@ -1,6 +1,6 @@
 DSKM DNSsec Key Management
  
- Copyright (c) 2012 Axel Rau, axel.rau@chaos1.de
+ Copyright (c) 2012-2019 Axel Rau, axel.rau@chaos1.de
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,47 +25,56 @@ Purpose:
     Zones may be local, public or reverse (IP4 or IP6).
 
 Requirements:
-    bind 9.9.1+ http://www.isc.org/software/bind
-    python 3.2+ http://www.python.org/download/
-    pycrypto    http://www.pycrypto.org/
-    dnspython   http://www.dnspython.org/
-    script      http://lamb.cc/script/
+    bind 9.12+      http://www.isc.org/software/bind
+    python 3.6+
+    pycryptodome    pypi.org
+    ecdsa           pypi.org
+    dnspython       pypi.org, http://www.dnspython.org/
+    script          http://lamb.cc/script/ (must be installed manually)
 
 Installation:
-    After installation of the required software, unpack the DSKM tar archive.
-    Move the file dnssec_key_maintenance.py and the directory DSKM to the place
-    where your cron scripts live.
-    Query usage of the main program at top level:
+    Optionally create a virtual environment.
+    Download the script package from http://lamb.cc/script/,
+    extract it to /usr/local/src and install it as
+        pip install /usr/local/src/script-1.7.2
+    Then install DSKM as
+        pip install DSKM
     
-    root# python3 dnssec_key_maintenance.py -h
-    Usage: dnssec_key_maintenance.py [options]
+    After installation of the required software, query usage of the main program
+    at top level::
     
-    Purpose: Do maintenace of DNSsec keys.
-     Create and delete them as necessary.
-    Submit/cancle DS-RR to/at parent registrar.
-    
-    Options:
-      -h, --help            show this help message and exit
-      -c, --cron            Run as cronjob. Each run increments timeout timer.
-      -v, --verbose         
-      -d, --debug           
-      -s STOPSIGNINGOFZONE, --stopSigningOfZone=STOPSIGNINGOFZONE
-                            Initiate procedure to make a zone unsigned. Argument
-                            is zone name.
-      -f, --force           Force deletion of keys (ignore delete time) while
-                            stopping signing of zone
-      -r, --registrar_status
-                            Query list of completed and pending requests of all
-                            registrars and terminate
-      -q QUERY_STATUS, --query_status=QUERY_STATUS
-                            Give detailed registrar result status about <request-
-                            id>.
-      -t, --test_registrar_DS_submission
-                            Delete and re-submit current DS-RR to registrar.
-      -n, --dry-run         Do not really change any data at registrar with
-                            --test_registrar_DS_submission.
+        # operate_dskm -h
+        Usage: operate_dskm [options]
+        
+        DSKM DNSsec Key Management Do maintenace of DNSsec keys. Create and delete
+        them as necessary. Submit/cancle DS-RR to/at parent registrar.
+        
+        Options:
+          -h, --help            show this help message and exit
+          -c, --cron            Run as cronjob. Each run increments timeout timer.
+          -S STOPSIGNINGOFZONE, --stopSigningOfZone=STOPSIGNINGOFZONE
+                                Initiate procedure to make a zone unsigned. Argument
+                                is zone name.
+          -f, --force           Force deletion of keys (ignore delete time) while
+                                stopping signing of zone.
+          -r, --registrar_status
+                                Query list of completed and pending requests of all
+                                registrars and terminate.
+          -p, --purge_all_registrar_completion_info
+                                Purge all completion info of completed and pending
+                                requests of all registrars and terminate.
+          -q QUERY_STATUS, --query_status=QUERY_STATUS
+                                Give detailed registrar result status about <request-
+                                id>.
+          -t, --test_registrar_DS_submission
+                                Delete and re-submit current DS-RR to registrar.
+          -n, --dry-run         Do not really change any data at registrar with
+                                --test_registrar_DS_submission.
+          -d, --debug           Turn on debugging.
+          -v, --verbose         Be more verbose.
     
     Configuration:
+    
     named.conf  DSKM requires all managed zones to share a common root.
                 There is one directory per zone, which contains zone file,
                 keys, bind journal files and DSKM config and status files, e.g.:
@@ -108,7 +117,8 @@ Installation:
                 Local domain, means an internal domain with local trust anchor
                 ("Registrar = Local" in example.com/dnssec-stat-example.com - see below)
                 
-    DSKM/conf.py
+    $VIRTUAL_ENV/etcdskm_conf.py or /usr/local/etc/dskm_conf.py:
+      
                 Please review the DSKM config file carefully:
                 master
                     A list of IPs where the (hidden) master may be reached by the script
@@ -151,7 +161,7 @@ Installation:
                 'Method must be changed to 'NSEC' (currently only).
                 If you then run the script, it will create the initial keys and
                 named will start signing the zone:
-        root# python3 dnssec_key_maintenance.py -v
+        # operate_dskm -v
         [Scanning /var/named/master/signed]
         [Working at 2012-05-31T15:01:33.932455 on example.com (com )]
         Generating key pair..............+++ ...........+++ 
@@ -162,7 +172,7 @@ Installation:
         [example.com/ZSK/27330/-1(A:2012-05-31T15:01:34, I:2012-06-01T15:01:34, D:2012-06-02T15:01:34)]
         [State transition of example.com/KSK from -1 to 0(KSK1 created) after 0 retries]
         [State transition of example.com/ZSK from -1 to 0(ZSK1 created) after 0 retries]
-        root# 
+        # 
                 Debug- and informal messages are in square brackets, warnings start with '%' and
                 errors start with '?'.
                 The 3 timestamps per key are Active (start signing with this key), 

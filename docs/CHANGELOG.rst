@@ -4,68 +4,53 @@ Changelog
 
 .. toctree::
 
-0.9.0 (2017-07-18)
+pre.0.9.0
 ------------------
 
+- Check if SOA serial in zone file and master server are in sync
+- BUGFIX: Allow ":" in value of Joker response
+- BUGFIX: Fix keyError on 1st DS-RR submission of new zone
+- Poll all auth NS for each zone to prevent from registrar error
+- Implemented purge_all_registrar_completion_info
+- :BUGFIX: If key timing data trashed, create uncloned key
+- RIPE NCC introduced "last-modified" which must not be supplied
+- Make sure master server has loaded zone before querying DNSKEY
+- RIPE NCC introduced "last-modified" which must not be supplied
+- Make sure master server has loaded zone before querying DNSKEY
+- Merge branch 'master' of git.chaos1.de:DSKM
+- Exit if master servers fails in masters_DNSKEYs
+- Fixed handover for de-domains with Joker.com
+- BUGFIX: Change to correct dir before file operations
+- BUGFIX: New conf variable OWNER_OF_PRIVATE_KEY set, if bind not running as root
+- Completed implementation of test_registrar_DS_submission for RIPE
+- Implemented --test_registrar_DS_submission for RIPE
+- New command "test_registrar_DS_submission". Moving zone_dirs and zones into misc
+- New command "test_registrar_DS_submission". Moving zone_dirs and zones into misc
+- Add TLS support for joker.com (required now)
+- Add TLS support for joker.com (required now)
+- Add config for certificate authority store, to allow for cert validation
+- Converted RIPE module to REST API
+- New key timing interval for rollover time, to allow for longer I_D interval (until sigs expired). Allow for changing of timing parameters while zones are active (changed applied to zones, becoming active). Adjusted default configuration. Bugfixes.
+- Implemented registrar 'by hand'. DSKM/key.test_if_included: replaced axfr by query
+- Make sure query timeout, FORMERR and NXDOMAIN abort zone, treat NoAnswer as missing RR. Explain config of local sub domains in README
+- Removed state 6 (DS2 submitted immediately after KSK2 active) KSK2 immediately active, (no longerwaiting for KSK1 inactive)
+- Bug fixes: "DS2 submit time reached" now A+ppt and "DS1 retire request" retires now the right DS
+- Refactored - now a package with 6 modules - bugfixes - email interface - running as cronjob
+- fixed test_if_included timestamps now with resolution of seconds. Fixed delete_a
+- added 'stopSigning', 'validate', performStateTransition, fixed test_if_included to check if key used for signing
+- keys being created, ds being created, local ds submitted and soa incremented and zone reloaded
+- State table logic - work in progress
+- reworked state diagram, based on NIST 800-81r1. clarifications and simplifications
+- incorporated comments from bind-users into diagram
+- State diagram for key rollover created (dnssec_key_maintenance.py)
+- Initial creation of keys plus DS done.
 - Initial public release.
 
-0.9.1 (2017-07-28)
+0.9.0 (2019-03-09)
 ------------------
 
-- Documentation at https://serverpki.readthedocs.io
-
-0.9.2 (2018-03-19)
-------------------
-
-- Python 3.6 supported
-- Omit disabled certs from list of certs to be renewed.
-- BUGFIX: Bind place to jail not to disthost (disthost->jail->place) 
-- Do not expire certs one day before "not_after" but one day after instead
-- Allow "distribute only" with --renew-local-certs
-- New Feature: --renew-local-certs REMAINING_DAYS 
-    Renews local certs, which would expire within REMAINING_DAYS.
-    Gives a nice tabular display of affected certs
-- New Feature: Allow encrypted storage of keys in DB
-
-    2 new action commands: --encrypt-keys and --decrypt-keys
-    
-    New configuration parameter: db_encryption_key
-
-- Upgrading:
-    Create new table Revision in DB - see install/create_schema_pki.sql::
-    
-     pki_op=# CREATE TABLE Revision (
-     id                SERIAL          PRIMARY KEY,            -- 'PK of Revision'
-     schemaVersion     int2            NOT NULL  DEFAULT 1,    -- 'Version of DB schema'
-     keysEncrypted     BOOLEAN         NOT NULL  DEFAULT FALSE -- 'Cert keys are encrypted'
-     );
-     pki_op=# INSERT INTO revision (schemaVersion) values(1);
-    
-    Then create passphrase and encrypt DB (see tutorial).
-
-
-0.9.3 (2019-02-11)
-------------------
-
-- Python 3.7 supported
-- With pyopenssl 19  on FreeBSD 12 (which has OpenSSL 1.1.1a-freebsd in base
-  system), paramiko 2.4 works out-of-the-box. No longer need for paramiko
-  workarounds like package paramiko-clc.
-- Now recovering from "Letsencrypt forgetting authorizations", which happened
-  at begin of 2019.
-- Fixing bug where one letsencrypt authorization was requested multiple times
-  (happened once per distribution target).
-- Being more patient with Letsencrypt's response to challenges
-
-
-0.9.4 (2019-02-21)
-------------------
-
-- INCOMPATIBLE CHANGE in configuration file syntax: dbAccounts keyword has been
-  changed from 'pki_dev' to 'serverpki'. See install example_config.py
-- Multiple local CA certs for CA cert roll over
-- Increased hash size to 512 (CA cert) resp. 384 bits (server/client cert)
-- Cert (including CA cert) export by cert serial number implemented.
-- Listing of cert meta info now also lists (issued) cert instances.
-- requirement for PyOpenSSL removed.
-- BUGFIXES e.g. Allow to enter 1st cert into empty CertInstances table
+- SECURITY-FIX: replaced module pycrypto by pycryptodome
+- DSKM now run as shellscript operate_dskm (installed in $prefix/bin)
+- config file now called dskm_conf.py. Expected in $VIRTUAL_ENV/etc or /usr/local/etc
+- Now compatible with Python 3.6
+- License change: Now GPLv3.
