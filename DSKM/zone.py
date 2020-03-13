@@ -552,8 +552,10 @@ class managedZone(object):
             except:                 # file not found or not readable
                 raise Exception("verifySerial can't read zone file " + filename)
         sea = re.search('(\d{10})(\s*;\s*)(Serial number)', zf)
-        serial = sea.group(1)
-                
+        if sea:
+            serial = sea.group(1)
+        else:
+            return true             # assume dynamic zone (has no readable zone file)        
         l.logDebug('verifySerial of {}: file: {} dns: {}'.format(self.name, serial, result))
         if int(serial) > int(result):   # file more recent than master server?
             l.logError('Serial of {} out of sync: {} > {}'.format(self.name, serial, result))
