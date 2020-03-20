@@ -1,1 +1,1 @@
-__all__ = ["key", "logger", "misc", "operate", "registrar", "utils", "zone"]
+__all__ = ["config", "key", "logger", "misc", "operate", "registrar", "utils", "zone", "REG"]

@@ -555,7 +555,7 @@ class managedZone(object):
         if sea:
             serial = sea.group(1)
         else:
-            return true             # assume dynamic zone (has no readable zone file)        
+            return True             # assume dynamic zone (has no readable zone file)        
         l.logDebug('verifySerial of {}: file: {} dns: {}'.format(self.name, serial, result))
         if int(serial) > int(result):   # file more recent than master server?
             l.logError('Serial of {} out of sync: {} > {}'.format(self.name, serial, result))
