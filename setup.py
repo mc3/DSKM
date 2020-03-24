@@ -19,8 +19,8 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url = "https://github.com/mc3/DSKM",
     packages = [ 'DSKM' ],
-    data_files =[('share/doc/DSKM', ['dnssec_key_states.graffle',
-                                          'dnssec_key_states.pdf'])],                                      
+    data_files =[('share/doc/DSKM', ['docs/dnssec_key_states.graffle',
+                                          'docs/dnssec_key_states.pdf'])],                                      
     entry_points = {
         'console_scripts': [
             'operate_dskm = DSKM.operate:execute_from_command_line',
