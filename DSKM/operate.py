@@ -133,7 +133,6 @@ def execute_from_command_line():
             if not misc.zones[zone_name].verifySerial(): continue
             misc.zones[zone_name].performStateTransition()
             misc.zones[zone_name].validate()
-            time.sleep(5)        # random validation errors - rate limit?
         except misc.AbortedZone as a:
             print(a.data)
             print('%Skipping zone ' + zone_name)
