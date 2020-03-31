@@ -34,7 +34,8 @@ import binascii
 
 import copy
 
-import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY.DNSKEY, dns.rcode
+##import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY.DNSKEY, dns.rcode
+import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY, dns.rcode
 import dns.dnssec, dns.zone
 
 import json
@@ -551,7 +552,7 @@ class managedZone(object):
                 zf = fd.read()
             except:                 # file not found or not readable
                 raise Exception("verifySerial can't read zone file " + filename)
-        sea = re.search('(\d{10})(\s*;\s*)(Serial number)', zf)
+        sea = re.search(r'(\d{10})(\s*;\s*)(Serial number)', zf)
         if sea:
             serial = sea.group(1)
         else:
