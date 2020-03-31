@@ -35,7 +35,10 @@ import binascii
 import copy
 
 ##import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY.DNSKEY, dns.rcode
-import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rdtypes.ANY, dns.rcode
+import dns.resolver, dns.message, dns.query, dns.rdatatype, dns.rcode
+
+import pdb; pdb.set_trace()
+import dns.rdtypes.ANY
 import dns.dnssec, dns.zone
 
 import json

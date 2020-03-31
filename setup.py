@@ -1,4 +1,4 @@
-import setuptools
+from setuptools import setup, find_packages
 
 # Version info -- read without importing
 _locals = {}
@@ -9,7 +9,7 @@ version = _locals['__version__']
 with open("README.rst", "r") as fh:
     long_description = fh.read()
 
-setuptools.setup(
+setup(
     name = "DSKM",
     version = version,
     author = "Axel Rau",
@@ -18,7 +18,7 @@ setuptools.setup(
     long_description = long_description,
     long_description_content_type="text/markdown",
     url = "https://github.com/mc3/DSKM",
-    packages = [ 'DSKM' ],
+    packages = find_packages(),
     data_files =[('share/doc/DSKM', ['docs/dnssec_key_states.graffle',
                                           'docs/dnssec_key_states.pdf'])],                                      
     entry_points = {
