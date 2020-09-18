@@ -494,7 +494,7 @@ class managedZone(object):
         r = ext_recursive_resolver
         try:
             qname = dns.name.from_text(self.name)
-            request = dns.message.make_query(qname, rdtype=dns.rdatatype.SOA, rdclass=dns.rdataclass.ANY)
+            request = dns.message.make_query(qname, rdtype=dns.rdatatype.SOA, rdclass=dns.rdataclass.INTERNET)
             request.use_edns(r.edns, r.ednsflags, r.payload)
             request.want_dnssec(True)
             response = None
@@ -522,7 +522,7 @@ class managedZone(object):
             if response is None:
                 e = dns.resolver.NoAnswer
                 raise e
-            ans = dns.resolver.Answer(qname, dns.rdatatype.SOA, dns.rdataclass.ANY, response, False)
+            ans = dns.resolver.Answer(qname, dns.rdatatype.SOA, dns.rdataclass.INTERNET, response, False)
 
             l.logDebug('Flags are %x; %x should be set' % (ans.response.flags, dns.flags.AD))
             if ans.response.flags & dns.flags.AD:
@@ -618,7 +618,7 @@ def nsAliveTest(theZone):         # query all authoritative NS for SOA of zone
     r = ext_recursive_resolver
     
     qname = dns.name.from_text(theZone)
-    request = dns.message.make_query(qname, rdtype=dns.rdatatype.SOA, rdclass=dns.rdataclass.ANY)
+    request = dns.message.make_query(qname, rdtype=dns.rdatatype.SOA, rdclass=dns.rdataclass.INTERNET)
     request.use_edns(r.edns, r.ednsflags, r.payload)
     request.want_dnssec(True)
     response = None
