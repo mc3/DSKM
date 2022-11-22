@@ -91,7 +91,8 @@ class SecureConnectionRipe():
     
     def __init__(self):
         
-        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations('/usr/local/share/certs/ca-root-nss.crt')
         SecureConnectionRipe.conn = http.client.HTTPSConnection(conf.registrar['Ripe']['server'], context = context)
         ##SecureConnectionRipe.conn.set_debuglevel(10)
         l.logDebug('Securely connected.')
