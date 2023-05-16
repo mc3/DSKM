@@ -94,7 +94,7 @@ class ConnectionJoker(object):
         l.logDebug('Collected authentication response.')
         if self.session['Status-Code'] != '0':
             l.logError('Failed to sign-on at Joker.com, because: ' + self.session['Status-Text'])
-            for k in session.keys():
+            for k in self.session.keys():
                 print(k, ': ',  self.session[k])
             return None
         l.logDebug('Authentication succeeded.')

@@ -23,6 +23,7 @@ logger.py - Logger class module - centraliced logging and alarming
 import pprint
 import smtplib
 from email.mime.text import MIMEText
+from email import policy
 
 # -----------------------------------------
 import DSKM.config as conf
@@ -92,12 +93,21 @@ class Logger():
             return
         if onlyCron and not Logger.cron: # mail only if cronjob, if so requested
             return
-        msg = MIMEText(body)
+        ## 2020-04-12 msg = MIMEText(body)
+        ## not yet fixed: smtplib.SMTPDataError:
+        ##   (550, b'maximum allowed line length is 998 octets, got 1174')
+        ## import pdb; pdb.set_trace()
+        ## return
+        fixed_body = body.replace("\n", "\r\n")
+        msg = MIMEText(fixed_body, policy=policy.SMTP)
         msg['Subject'] = '[DSKM] ' + subject
         msg['From'] = conf.sender
         msg['To'] = ', '.join(conf.recipients)
         s = smtplib.SMTP(conf.mailRelay)
-        s.send_message(msg)
+        try:
+            s.send_message(msg)
+        except:
+            print('Linr too long for SMTP relaying')
         s.quit
     
     def cronjob(self):
